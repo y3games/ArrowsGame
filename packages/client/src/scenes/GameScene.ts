@@ -27,6 +27,8 @@ interface ArrowsDebugHook {
   getYou: () => PlayerTag | null;
   getMatchId: () => string | null;
   isMyTurn: () => boolean;
+  /** The board's rectangle in canvas coordinates. */
+  getGridRect: () => { left: number; top: number; width: number; height: number };
   /** What the HUD is currently telling the player (banner, countdown label, seconds in the clock). */
   getHud: () => { banner: string; countdown: string; clock: string };
   /** The lobby's list of open rooms, as last sent by the server. */
@@ -124,6 +126,10 @@ export class GameScene extends Phaser.Scene {
         getYou: () => this.you,
         getMatchId: () => this.matchId,
         isMyTurn: () => this.myTurn,
+        getGridRect: () => {
+          const { rows, cols } = getBoardSize();
+          return { left: getGridLeft(), top: getGridTop(), width: getCellSize() * cols, height: getCellSize() * rows };
+        },
         getHud: () => (this.scene.get('UIScene') as UIScene).debugHud(),
         getRooms: () => this.openRooms,
         createRoom: (name) => this.net.createRoom(name),

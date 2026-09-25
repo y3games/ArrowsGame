@@ -74,6 +74,38 @@ describe('moods', () => {
     expect(loopSeconds(tense)).toBeGreaterThan(8);
   });
 
+  it('the cheerful tune is brighter: a higher, wider melody than the tense one or the old tune', () => {
+    const meanPitch = (t: typeof cheerful): number => {
+      const notes = [...t.lead.values()];
+      return notes.reduce((sum, n) => sum + n.midi, 0) / notes.length;
+    };
+    // The previous cheerful melody sat around G5–A5 (MIDI ~79); this one lives higher.
+    expect(meanPitch(cheerful)).toBeGreaterThan(80);
+    expect(cheerful.bpm).toBeGreaterThanOrEqual(144);
+    expect(cheerful.sparkle).toBe(true);
+    expect(tense.sparkle).toBe(false);
+  });
+
+  it('the cheerful tune bounces chord stabs on the off-beats only, and the tense one has none', () => {
+    const hits = cheerful.stabs.map((chord, step) => ({ chord, step })).filter((x) => x.chord !== null);
+    expect(hits.length).toBe(cheerful.steps / 2);
+    for (const { chord, step } of hits) {
+      expect(step % 2).toBe(1);
+      expect(chord).toHaveLength(3);
+      for (const midi of chord!) {
+        expect(midi).toBeGreaterThanOrEqual(58);
+        expect(midi).toBeLessThanOrEqual(80);
+      }
+    }
+    expect(tense.stabs.every((c) => c === null)).toBe(true);
+  });
+
+  it('stabs are the chord under the bar: major thirds on C, minor on Am', () => {
+    // Bar 1 is C (root C3): C E G. Bar 3 is A minor: A C E.
+    expect(cheerful.stabs[1]).toEqual([60, 64, 67]);
+    expect(cheerful.stabs[2 * 8 + 1]).toEqual([69, 72, 76]);
+  });
+
   it('a hold (-) lengthens the previous note instead of starting a new one', () => {
     // Bar 2 of the cheerful tune ends "... A5 -": the last note rings for two steps.
     const held = [...cheerful.lead.values()].filter((n) => n.steps === 2);

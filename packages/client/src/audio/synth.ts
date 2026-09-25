@@ -109,8 +109,20 @@ export function scheduleStep(ctx: BaseAudioContext, dest: AudioNode, noise: Audi
       duration: lead.steps * stepLen * 0.92,
       type: track.leadWave,
       gain: tense ? 0.07 : 0.085,
-      cutoff: tense ? 2600 : 3200,
+      // The cheerful tune keeps its filter wide open: that is most of what makes it sound bright.
+      cutoff: tense ? 2600 : 6500,
     });
+    if (track.sparkle) {
+      // A bell-like ping an octave up, gone almost at once.
+      playTone(ctx, dest, { freq: midiToHz(lead.midi + 12), start: time, duration: 0.12, type: 'sine', gain: 0.04, attack: 0.002, release: 0.12 });
+    }
+  }
+
+  const stab = track.stabs[step];
+  if (stab) {
+    for (const midi of stab) {
+      playTone(ctx, dest, { freq: midiToHz(midi), start: time, duration: stepLen * 0.4, type: 'square', gain: 0.022, cutoff: 3800, attack: 0.003, release: 0.03 });
+    }
   }
 
   const bass = track.bass[step];
@@ -120,7 +132,7 @@ export function scheduleStep(ctx: BaseAudioContext, dest: AudioNode, noise: Audi
 
   if (track.kick[step]) playKick(ctx, dest, time, tense ? 0.5 : 0.42);
   if (track.snare[step]) playSnare(ctx, dest, noise, time, tense ? 0.14 : 0.12);
-  if (track.hat[step]) playHat(ctx, dest, noise, time, tense ? 0.06 : 0.045);
+  if (track.hat[step]) playHat(ctx, dest, noise, time, tense ? 0.06 : 0.055);
 }
 
 /**

@@ -105,6 +105,9 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
 
 ## Gotchas
 
+- **Never turn Phaser's `autoCenter` back on.** `#app` in `index.html` is a flex box that already
+  centres the canvas; with `autoCenter` Phaser adds its own margin on top and the whole game ends up
+  off to one side (300 px on a 1920x1080 window). `main.ts` uses `Phaser.Scale.NO_CENTER`.
 - `packages/shared`'s imports use explicit `.js` extensions on `.ts` files (e.g. `from
   './game/types.js'`) — this is the standard TS-ESM pattern, required for both `tsc` and `tsx` to
   resolve correctly. Don't "fix" these to `.ts`.

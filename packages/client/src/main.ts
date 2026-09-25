@@ -17,7 +17,9 @@ new Phaser.Game({
   audio: { noAudio: true },
   scale: {
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    // The page centres the canvas itself (`#app` is a flex box). Letting Phaser centre it as well adds a
+    // second margin on top and pushes the whole game off to one side — badly so on wide screens.
+    autoCenter: Phaser.Scale.NO_CENTER,
     width: RENDER.CANVAS_WIDTH,
     height: RENDER.CANVAS_HEIGHT,
   },
