@@ -6,7 +6,9 @@ import {
   applySoloMove,
   createSoloState,
   generateBoard,
+  soloLevelConfig,
   soloTimeLeftMs,
+  type SoloLevelConfig,
   type SoloState,
 } from '@arrows/shared';
 
@@ -19,26 +21,24 @@ export class SoloGame {
   private state: SoloState | null = null;
   private finished = false;
   private timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly level: SoloLevelConfig;
 
   /** `onFinished` fires once, when the board is cleared or the time runs out. */
   constructor(
     private readonly socket: Socket,
+    level: number,
     private readonly onFinished: () => void,
-  ) {}
+  ) {
+    // The level is whatever the client asked for; the curve decides what that means (and clamps it).
+    this.level = soloLevelConfig(level);
+  }
 
   start(): void {
-    const board = generateBoard({
-      rows: GAMEPLAY.GRID_ROWS,
-      cols: GAMEPLAY.GRID_COLS,
-      minLength: GAMEPLAY.ARROW_MIN_LENGTH,
-      maxLength: GAMEPLAY.ARROW_MAX_LENGTH,
-      fill: GAMEPLAY.BOARD_FILL,
-      straightBias: GAMEPLAY.ARROW_STRAIGHT_BIAS,
-      interlock: GAMEPLAY.BOARD_INTERLOCK,
-    });
+    const board = generateBoard(this.level);
     this.state = createSoloState(board, Date.now() + GAMEPLAY.ROUND_START_GRACE_MS);
     this.socket.emit('solo:started', {
       gameId: this.id,
+      level: this.level.level,
       board,
       startsInMs: GAMEPLAY.ROUND_START_GRACE_MS,
       timeLimitMs: SOLO.TIME_LIMIT_MS,
@@ -98,6 +98,7 @@ export class SoloGame {
     const now = Date.now();
     const total = state.board.arrows.length;
     this.socket.emit('solo:finished', {
+      level: this.level.level,
       outcome,
       timeLeftMs: outcome === 'timeout' ? 0 : soloTimeLeftMs(state, now),
       elapsedMs: Math.max(0, Math.min(now - state.startsAt, SOLO.TIME_LIMIT_MS)),

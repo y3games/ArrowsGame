@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { SOLO } from '../src/game/config.js';
-import { applySoloMove, createSoloState, soloTimeLeftMs } from '../src/game/solo.js';
+import { GAMEPLAY, SOLO } from '../src/game/config.js';
+import { generateBoard } from '../src/game/board.js';
+import { findEscapableArrows } from '../src/game/rules.js';
+import { applySoloMove, clampSoloLevel, createSoloState, soloLevelConfig, soloTimeLeftMs } from '../src/game/solo.js';
 import type { Board } from '../src/game/types.js';
 
 /**
@@ -96,5 +98,86 @@ describe('solo moves', () => {
     expect(applySoloMove(s, 'nope', START + 1)).toEqual({ type: 'rejected', reason: 'unknown-arrow' });
     applySoloMove(s, 'y', START + 2);
     expect(applySoloMove(s, 'y', START + 3)).toEqual({ type: 'rejected', reason: 'already-removed' });
+  });
+});
+
+describe('solo level curve', () => {
+  const levels = Array.from({ length: 30 }, (_, i) => i + 1);
+
+  it('starts small and easy, and reaches the full map at the full-size level', () => {
+    const first = soloLevelConfig(1);
+    expect([first.rows, first.cols]).toEqual([10, 10]);
+    expect(first.minLength).toBe(2);
+    const full = soloLevelConfig(SOLO.FULL_SIZE_LEVEL);
+    expect([full.rows, full.cols]).toEqual([GAMEPLAY.GRID_ROWS, GAMEPLAY.GRID_COLS]);
+    expect(soloLevelConfig(SOLO.FULL_SIZE_LEVEL - 1).rows).toBeLessThan(GAMEPLAY.GRID_ROWS);
+  });
+
+  it('never gets easier: every knob moves only in the harder direction', () => {
+    for (const level of levels.slice(1)) {
+      const prev = soloLevelConfig(level - 1);
+      const cur = soloLevelConfig(level);
+      expect(cur.rows).toBeGreaterThanOrEqual(prev.rows);
+      expect(cur.cols).toBeGreaterThanOrEqual(prev.cols);
+      expect(cur.minLength).toBeGreaterThanOrEqual(prev.minLength);
+      expect(cur.maxLength).toBeGreaterThanOrEqual(prev.maxLength);
+      expect(cur.interlock).toBeGreaterThanOrEqual(prev.interlock);
+      expect(cur.centerPull).toBeGreaterThanOrEqual(prev.centerPull);
+      expect(cur.fill).toBeGreaterThanOrEqual(prev.fill);
+      expect(cur.straightBias).toBeLessThanOrEqual(prev.straightBias);
+    }
+  });
+
+  it('keeps getting harder after the map stops growing', () => {
+    const atFull = soloLevelConfig(SOLO.FULL_SIZE_LEVEL);
+    const later = soloLevelConfig(SOLO.FULL_SIZE_LEVEL + 6);
+    expect(later.rows).toBe(atFull.rows);
+    expect(later.straightBias).toBeLessThan(atFull.straightBias);
+    expect(later.maxLength).toBeGreaterThan(atFull.maxLength);
+    expect(later.centerPull).toBeGreaterThan(atFull.centerPull);
+  });
+
+  it('keeps stepping up until about level 20', () => {
+    const a = soloLevelConfig(12);
+    const b = soloLevelConfig(20);
+    expect(b.maxLength).toBeGreaterThan(a.maxLength);
+    expect(b.straightBias).toBeLessThan(a.straightBias);
+    expect(b.centerPull).toBeGreaterThan(a.centerPull);
+  });
+
+  it('coerces nonsense levels into range', () => {
+    expect(clampSoloLevel(undefined)).toBe(1);
+    expect(clampSoloLevel(0)).toBe(1);
+    expect(clampSoloLevel(-5)).toBe(1);
+    expect(clampSoloLevel(3.9)).toBe(3);
+    expect(clampSoloLevel(Number.NaN)).toBe(1);
+    expect(clampSoloLevel('7')).toBe(1);
+    expect(clampSoloLevel(10 ** 9)).toBe(SOLO.MAX_LEVEL);
+  });
+
+  it('generates a solvable board of the right size, with no one-cell arrows, at every level', () => {
+    for (const level of [1, 2, 5, 8, 11, 12, 20, 30]) {
+      const c = soloLevelConfig(level);
+      const b = generateBoard(c);
+      expect(b.rows).toBe(c.rows);
+      expect(b.cols).toBe(c.cols);
+      expect(b.arrows.every((a) => a.cells.length >= 2)).toBe(true);
+      const remaining = new Set(b.arrows.map((a) => a.id));
+      while (remaining.size > 0) {
+        const free = findEscapableArrows(b, remaining);
+        expect(free.length).toBeGreaterThan(0);
+        for (const a of free) remaining.delete(a.id);
+      }
+    }
+  });
+
+  it('puts more arrows on the board as the map grows', () => {
+    const count = (level: number): number => {
+      let total = 0;
+      for (let i = 0; i < 4; i++) total += generateBoard(soloLevelConfig(level)).arrows.length;
+      return total / 4;
+    };
+    expect(count(6)).toBeGreaterThan(count(1));
+    expect(count(SOLO.FULL_SIZE_LEVEL)).toBeGreaterThan(count(6));
   });
 });

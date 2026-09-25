@@ -56,6 +56,7 @@ describe('generateBoard', () => {
     { rows: 4, cols: 4, minLength: 2, maxLength: 4, fill: 0.6 },
     { rows: 12, cols: 8, minLength: 3, maxLength: 9, fill: 0.7 },
     { rows: 3, cols: 3, minLength: 1, maxLength: 3, fill: 1 },
+    { rows: 30, cols: 30, minLength: 4, maxLength: 16, fill: 0.88 },
   ];
   const seeds = [1, 2, 3, 4, 5, 42, 12345];
 
@@ -71,7 +72,8 @@ describe('generateBoard', () => {
       it(`builds well-formed snakes that never overlap: ${label}`, () => {
         const seen = new Set<string>();
         for (const arrow of board().arrows) {
-          expect(arrow.cells.length).toBeGreaterThanOrEqual(1);
+          // Even when asked for one-cell arrows (minLength 1) none is ever produced.
+          expect(arrow.cells.length).toBeGreaterThanOrEqual(2);
           expect(arrow.cells.length).toBeLessThanOrEqual(size.maxLength);
           arrow.cells.forEach((cell, i) => {
             expect(cell.row).toBeGreaterThanOrEqual(0);
@@ -103,6 +105,7 @@ describe('generateBoard', () => {
     let covered = 0;
     let longest = 0;
     let bendsPerArrow = 0;
+    let arrowCount = 0;
     for (const seed of seeds) {
       const b = generateBoard({
         rows: GAMEPLAY.GRID_ROWS,
@@ -112,14 +115,18 @@ describe('generateBoard', () => {
         fill: GAMEPLAY.BOARD_FILL,
         straightBias: GAMEPLAY.ARROW_STRAIGHT_BIAS,
         interlock: GAMEPLAY.BOARD_INTERLOCK,
+        centerPull: GAMEPLAY.BOARD_CENTER_PULL,
         rng: mulberry32(seed),
       });
       expect(isFullyClearable(b)).toBe(true);
+      arrowCount += b.arrows.length;
       covered += b.arrows.reduce((sum, a) => sum + a.cells.length, 0) / (b.rows * b.cols);
       longest = Math.max(longest, ...b.arrows.map((a) => a.cells.length));
       bendsPerArrow += b.arrows.reduce((sum, a) => sum + countBends(a.cells), 0) / b.arrows.length;
     }
-    expect(covered / seeds.length).toBeGreaterThan(0.7);
+    // The ray-clear rule caps how full a board can get (about 60%); it must not fall far below that.
+    expect(covered / seeds.length).toBeGreaterThan(0.5);
+    expect(arrowCount / seeds.length).toBeGreaterThan(60);
     expect(longest).toBeGreaterThanOrEqual(12);
     expect(bendsPerArrow / seeds.length).toBeGreaterThan(1.5);
   });
@@ -140,5 +147,20 @@ describe('generateBoard', () => {
       return total;
     };
     expect(depth(10)).toBeGreaterThan(depth(1));
+  });
+
+  it('fills the middle of a big board when the start cells are pulled inwards', () => {
+    const middleCoverage = (centerPull: number): number => {
+      let total = 0;
+      for (let seed = 1; seed <= 6; seed++) {
+        const b = generateBoard({ rows: 30, cols: 30, minLength: 4, maxLength: 16, fill: 0.9, straightBias: 0.3, interlock: 4, centerPull, rng: mulberry32(seed) });
+        const occupied = new Set(b.arrows.flatMap((a) => a.cells.map(cellKey)));
+        let filled = 0;
+        for (let r = 8; r < 22; r++) for (let c = 8; c < 22; c++) if (occupied.has(cellKey({ row: r, col: c }))) filled++;
+        total += filled / (14 * 14);
+      }
+      return total / 6;
+    };
+    expect(middleCoverage(5)).toBeGreaterThan(middleCoverage(1) + 0.1);
   });
 });

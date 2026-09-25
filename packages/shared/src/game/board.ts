@@ -9,6 +9,9 @@ export const DIRECTION_DELTA: Record<Direction, { dr: number; dc: number }> = {
 
 const DIRECTIONS: Direction[] = ['up', 'down', 'left', 'right'];
 
+/** A one-cell arrow is just a dot with a triangle — every arrow is a snake of at least this many cells. */
+export const MIN_ARROW_LENGTH = 2;
+
 export function cellKey(cell: Cell): string {
   return `${cell.row},${cell.col}`;
 }
@@ -46,6 +49,12 @@ export interface GenerateBoardOptions {
    * must go before that one"). 1 means no preference.
    */
   interlock?: number;
+  /**
+   * How hard early snakes are pulled toward the middle: each start cell is the one closest to the
+   * centre out of this many random draws. Arrows placed first keep the longest clear paths, so
+   * without a pull the middle of a big board stays empty while the edges pack full. 1 = no pull.
+   */
+  centerPull?: number;
   /** Injectable PRNG (returns [0,1)) so board generation is deterministic in tests. */
   rng?: () => number;
 }
@@ -58,18 +67,22 @@ export interface GenerateBoardOptions {
  * later escapes earlier, so it never has to be considered.
  */
 export function generateBoard(options: GenerateBoardOptions): Board {
-  const { rows, cols, minLength, maxLength, fill, straightBias = 0.5, interlock = 1, rng = Math.random } = options;
+  const { rows, cols, fill, straightBias = 0.5, interlock = 1, centerPull = 1, rng = Math.random } = options;
+  const minLength = Math.max(MIN_ARROW_LENGTH, options.minLength);
+  const maxLength = Math.max(minLength, options.maxLength);
   const occupied = new Set<string>();
   /** How many placed arrows would have to pass through each cell on their way out. */
   const crossings = new Map<string, number>();
   const arrows: Arrow[] = [];
   const target = Math.floor(rows * cols * fill);
   const maxAttempts = rows * cols * 60;
+  // Placements that fail in a row before a phase is given up on: long snakes first, then short ones to fill the gaps.
+  const patience = Math.max(200, rows * cols);
+  let fillingGaps = false;
+  let failures = 0;
   let covered = 0;
 
   for (let attempt = 0; attempt < maxAttempts && covered < target; attempt++) {
-    // Once long snakes stop fitting, switch to short ones so the leftover gaps still get filled.
-    const fillingGaps = attempt > maxAttempts / 2;
     let best: Arrow | null = null;
     let bestScore = -1;
     for (let k = 0; k < (fillingGaps ? 1 : interlock); k++) {
@@ -78,9 +91,11 @@ export function generateBoard(options: GenerateBoardOptions): Board {
         cols,
         occupied,
         id: `a${arrows.length}`,
-        minLength: fillingGaps ? 1 : minLength,
+        minLength: fillingGaps ? MIN_ARROW_LENGTH : minLength,
         maxLength: fillingGaps ? Math.min(3, maxLength) : maxLength,
         straightBias,
+        // Only the long-snake phase is pulled inwards; filling gaps must take whatever cells are left.
+        centerPull: fillingGaps ? 1 : centerPull,
         rng,
       });
       if (!arrow) continue;
@@ -91,7 +106,15 @@ export function generateBoard(options: GenerateBoardOptions): Board {
         bestScore = score;
       }
     }
-    if (!best) continue;
+    if (!best) {
+      if (++failures <= patience) continue;
+      if (fillingGaps) break;
+      // Long snakes stopped fitting: switch to short ones so the leftover gaps still get filled.
+      fillingGaps = true;
+      failures = 0;
+      continue;
+    }
+    failures = 0;
     arrows.push(best);
     for (const cell of best.cells) occupied.add(cellKey(cell));
     for (const cell of pathCells(best, rows, cols)) crossings.set(cellKey(cell), (crossings.get(cellKey(cell)) ?? 0) + 1);
@@ -99,8 +122,8 @@ export function generateBoard(options: GenerateBoardOptions): Board {
   }
 
   if (arrows.length === 0) {
-    // Degenerate grid: a one-cell arrow on the top row pointing up always has a clear path.
-    arrows.push({ id: 'a0', cells: [{ row: 0, col: 0 }], dir: 'up' });
+    // Degenerate grid: two cells along the top row, head at the right end, nothing in its way.
+    arrows.push({ id: 'a0', cells: [{ row: 0, col: 0 }, { row: 0, col: 1 }], dir: 'right' });
   }
   return { rows, cols, arrows };
 }
@@ -113,11 +136,16 @@ interface PlaceOptions {
   minLength: number;
   maxLength: number;
   straightBias: number;
+  centerPull: number;
   rng: () => number;
 }
 
-function tryPlace({ rows, cols, occupied, id, minLength, maxLength, straightBias, rng }: PlaceOptions): Arrow | null {
-  const start: Cell = { row: Math.floor(rng() * rows), col: Math.floor(rng() * cols) };
+function tryPlace({ rows, cols, occupied, id, minLength, maxLength, straightBias, centerPull, rng }: PlaceOptions): Arrow | null {
+  let start: Cell = { row: Math.floor(rng() * rows), col: Math.floor(rng() * cols) };
+  for (let i = 1; i < centerPull; i++) {
+    const other: Cell = { row: Math.floor(rng() * rows), col: Math.floor(rng() * cols) };
+    if (distanceToCenter(other, rows, cols) < distanceToCenter(start, rows, cols)) start = other;
+  }
   if (occupied.has(cellKey(start))) return null;
 
   const length = minLength + Math.floor(rng() * (maxLength - minLength + 1));
@@ -144,11 +172,12 @@ function tryPlace({ rows, cols, occupied, id, minLength, maxLength, straightBias
   }
   if (cells.length < minLength) return null;
 
-  // The head keeps pointing the way the last segment went; a single cell may point anywhere.
-  const candidates = cells.length >= 2 && heading ? [heading] : DIRECTIONS;
-  const clear = candidates.filter((dir) =>
-    pathCells({ cells, dir }, rows, cols).every((c) => !occupied.has(cellKey(c)) && !own.has(cellKey(c))),
-  );
-  if (clear.length === 0) return null;
-  return { id, cells, dir: clear[Math.floor(rng() * clear.length)]! };
+  // The head keeps pointing the way the last segment went (there are always at least two cells).
+  if (!heading) return null;
+  const clear = pathCells({ cells, dir: heading }, rows, cols).every((c) => !occupied.has(cellKey(c)) && !own.has(cellKey(c)));
+  return clear ? { id, cells, dir: heading } : null;
+}
+
+function distanceToCenter(cell: Cell, rows: number, cols: number): number {
+  return Math.hypot(cell.row - (rows - 1) / 2, cell.col - (cols - 1) / 2);
 }

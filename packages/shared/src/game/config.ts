@@ -4,8 +4,8 @@
  * tunables (colors, tween durations, canvas size) live in the client package instead.
  */
 export const GAMEPLAY = {
-  GRID_ROWS: 18,
-  GRID_COLS: 18,
+  GRID_ROWS: 30,
+  GRID_COLS: 30,
   /** Snake length range (cells) while the board is being laid out; gaps are later filled with shorter ones. */
   ARROW_MIN_LENGTH: 4,
   ARROW_MAX_LENGTH: 16,
@@ -15,6 +15,8 @@ export const GAMEPLAY = {
   ARROW_STRAIGHT_BIAS: 0.3,
   /** Candidates drawn per placement; higher interlocks the arrows more. See `generateBoard`. */
   BOARD_INTERLOCK: 10,
+  /** How hard early snakes are pulled toward the middle (more arrows, a fuller centre). See `generateBoard`. */
+  BOARD_CENTER_PULL: 4,
   /** The player who opens a round has less time than the turns that follow. */
   FIRST_TURN_MS: 5_000,
   TURN_MS: 10_000,
@@ -30,6 +32,10 @@ export const WIN_ROUNDS_NEEDED = Math.ceil(GAMEPLAY.BEST_OF / 2);
 export const SOLO = {
   TIME_LIMIT_MS: 180_000,
   PENALTY_MS: 10_000,
+  /** The board reaches its full size (GRID_ROWS x GRID_COLS) at this level; later levels only get more tangled. */
+  FULL_SIZE_LEVEL: 11,
+  /** Levels above this are refused — a sanity bound on what a client may ask for, not a designed ceiling. */
+  MAX_LEVEL: 999,
 } as const;
 
 export const ROOM = {

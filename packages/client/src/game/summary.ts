@@ -25,6 +25,7 @@ export function formatClock(ms: number): string {
 }
 
 export interface SoloSummary {
+  level: number;
   outcome: 'cleared' | 'timeout';
   timeLeftMs: number;
   elapsedMs: number;

@@ -9,7 +9,7 @@ export const RENDER = {
   CANVAS_WIDTH: 640,
   CANVAS_HEIGHT: 960,
   GRID_TOP: 176,
-  GRID_MARGIN_X: 12,
+  GRID_MARGIN_X: 10,
   COUNTDOWN_RADIUS: 34,
   COUNTDOWN_Y: 100,
   /** Slide-out speed, in cells per second. */
@@ -33,16 +33,42 @@ export const RENDER = {
   ARROW_PALETTE: [0xe8eaf6, 0x74c0fc, 0x69db7c, 0xffd43b, 0xf783ac, 0xb197fc, 0x63e6be, 0xffa94d],
 } as const;
 
+/** Vertical space between the round label and the score line that the board may use. */
+const GRID_AREA_HEIGHT = 620;
+
+/**
+ * The board on screen right now. Its size changes from game to game (solo levels grow the map),
+ * so the layout is derived from it instead of being fixed: GameScene sets it whenever a board is
+ * drawn, and everything that positions things on the board reads it back.
+ */
+let boardSize: { rows: number; cols: number } = { rows: GAMEPLAY.GRID_ROWS, cols: GAMEPLAY.GRID_COLS };
+
+export function setBoardSize(rows: number, cols: number): void {
+  boardSize = { rows, cols };
+}
+
+export function getBoardSize(): { rows: number; cols: number } {
+  return boardSize;
+}
+
+/** As big as the board can be drawn while still fitting the canvas width and the free height. */
 export function getCellSize(): number {
-  return Math.floor((RENDER.CANVAS_WIDTH - RENDER.GRID_MARGIN_X * 2) / GAMEPLAY.GRID_COLS);
+  const byWidth = (RENDER.CANVAS_WIDTH - RENDER.GRID_MARGIN_X * 2) / boardSize.cols;
+  const byHeight = GRID_AREA_HEIGHT / boardSize.rows;
+  return Math.floor(Math.min(byWidth, byHeight));
 }
 
 /** Left edge of the grid, centred horizontally. */
 export function getGridLeft(): number {
-  return Math.floor((RENDER.CANVAS_WIDTH - getCellSize() * GAMEPLAY.GRID_COLS) / 2);
+  return Math.floor((RENDER.CANVAS_WIDTH - getCellSize() * boardSize.cols) / 2);
+}
+
+/** Top edge of the grid, centred in the free height (small boards sit in the middle, not at the top). */
+export function getGridTop(): number {
+  return RENDER.GRID_TOP + Math.floor((GRID_AREA_HEIGHT - getCellSize() * boardSize.rows) / 2);
 }
 
 export function cellToPosition(row: number, col: number): { x: number; y: number } {
   const size = getCellSize();
-  return { x: getGridLeft() + col * size + size / 2, y: RENDER.GRID_TOP + row * size + size / 2 };
+  return { x: getGridLeft() + col * size + size / 2, y: getGridTop() + row * size + size / 2 };
 }

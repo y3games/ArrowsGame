@@ -2,6 +2,7 @@ import type { RoomErrorCode, RoomSnapshot, RoomSummary } from '@arrows/shared';
 import { MAX_NAME_LENGTH, loadPlayer, normalizeName, savePlayer } from '../services/player.js';
 import { describeRound, formatClock, type Outcome, type RoundRecord, type SoloSummary } from '../game/summary.js';
 import type { ConnectionState } from '../net/NetworkClient.js';
+import { SOLO, soloLevelConfig } from '@arrows/shared';
 
 /**
  * The lobby / room / result / disconnect overlay. It is plain DOM layered over the canvas, not a
@@ -20,8 +21,10 @@ export interface LobbyHandlers {
   onLeaveRoom(): void;
   onRematch(): void;
   onSolo(): void;
-  /** "나가기" during a solo run. */
-  onSoloExit(): void;
+  /** "레벨 1부터 다시 시작" — forget the saved solo level. */
+  onSoloReset(): void;
+  /** The floating "나가기" button, during a solo run or a multiplayer match. */
+  onGameExit(): void;
   /** From the disconnected panel: there is no room to leave, just go back to the lobby. */
   onToLobby(): void;
 }
@@ -38,9 +41,12 @@ export interface Lobby {
   /** Seating changed (or was just entered): refreshes the room panel and the result screen's controls. */
   setRoom(snapshot: RoomSnapshot): void;
   showResult(summary: MatchSummary): void;
-  showSoloResult(summary: SoloSummary): void;
-  /** The floating "나가기" button, shown while a solo run is in progress. */
-  setSoloExitVisible(visible: boolean): void;
+  /** `nextLevel` is the level the "다음 레벨" / "다시 도전" button will start. */
+  showSoloResult(summary: SoloSummary, nextLevel: number): void;
+  /** The level a solo start will play — shown on the lobby button. */
+  setSoloLevel(level: number): void;
+  /** The floating "나가기" button, shown while a game is in progress. */
+  setExitVisible(visible: boolean): void;
   /** The rematch window opened; the server removes anyone who has not voted when it closes. */
   openRematch(timeoutMs: number): void;
   setRematchStatus(status: { youVoted: boolean; opponentVoted: boolean }): void;
@@ -80,6 +86,7 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   const notice = element('lobby-notice');
   const createButton = element<HTMLButtonElement>('lobby-create');
   const soloStartButton = element<HTMLButtonElement>('lobby-solo-start');
+  const soloResetButton = element<HTMLButtonElement>('lobby-solo-reset');
   const soloAgainButton = element<HTMLButtonElement>('solo-again');
   const soloLobbyButton = element<HTMLButtonElement>('solo-lobby');
   const soloTitle = element('solo-title');
@@ -251,7 +258,8 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   const onRematch = (): void => handlers.onRematch();
   const onToLobby = (): void => handlers.onToLobby();
   const onSolo = (): void => handlers.onSolo();
-  const onSoloExit = (): void => handlers.onSoloExit();
+  const onSoloReset = (): void => handlers.onSoloReset();
+  const onGameExit = (): void => handlers.onGameExit();
 
   form.addEventListener('submit', onSubmit);
   roomLeaveButton.addEventListener('click', onLeaveRoom);
@@ -259,9 +267,10 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   rematchButton.addEventListener('click', onRematch);
   disconnectedLobbyButton.addEventListener('click', onToLobby);
   soloStartButton.addEventListener('click', onSolo);
+  soloResetButton.addEventListener('click', onSoloReset);
   soloAgainButton.addEventListener('click', onSolo);
   soloLobbyButton.addEventListener('click', onToLobby);
-  gameExitButton.addEventListener('click', onSoloExit);
+  gameExitButton.addEventListener('click', onGameExit);
 
   renderConnection();
   show('idle');
@@ -301,15 +310,17 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
       show('result');
     },
 
-    showSoloResult(summary) {
+    showSoloResult(summary, nextLevel) {
       const cleared = summary.outcome === 'cleared';
-      soloTitle.textContent = cleared ? '클리어!' : '시간 초과…';
+      const next = soloLevelConfig(nextLevel);
+      soloTitle.textContent = cleared ? `레벨 ${summary.level} 클리어!` : `레벨 ${summary.level} 시간 초과…`;
       soloTime.textContent = cleared ? `남은 시간 ${formatClock(summary.timeLeftMs)}` : `${summary.removed} / ${summary.total}개 제거`;
       const lines = [
-        cleared ? `걸린 시간 ${formatClock(summary.elapsedMs)}` : '3분 안에 모두 제거하지 못했습니다',
-        `실수 ${summary.mistakes}회${summary.mistakes > 0 ? ` (-${summary.mistakes * 10}초)` : ''}`,
+        cleared ? `걸린 시간 ${formatClock(summary.elapsedMs)}` : `${formatClock(SOLO.TIME_LIMIT_MS)} 안에 모두 제거하지 못했습니다`,
+        `실수 ${summary.mistakes}회${summary.mistakes > 0 ? ` (-${summary.mistakes * (SOLO.PENALTY_MS / 1000)}초)` : ''}`,
         `제거한 화살표 ${summary.removed} / ${summary.total}`,
-      ];
+        cleared ? `다음 레벨 ${next.level}: ${next.rows}×${next.cols} 맵${next.rows === soloLevelConfig(summary.level).rows ? ', 더 복잡한 화살표' : ', 더 많은 화살표'}` : '',
+      ].filter((text) => text !== '');
       soloStats.replaceChildren(
         ...lines.map((text) => {
           const item = document.createElement('li');
@@ -317,10 +328,16 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
           return item;
         }),
       );
+      soloAgainButton.textContent = cleared ? `다음 레벨 (레벨 ${next.level})` : `레벨 ${next.level} 다시 도전`;
       show('solo');
     },
 
-    setSoloExitVisible(visible) {
+    setSoloLevel(level) {
+      soloStartButton.textContent = `싱글 플레이 · 레벨 ${level}`;
+      soloResetButton.hidden = level <= 1;
+    },
+
+    setExitVisible(visible) {
       gameExitButton.hidden = !visible;
     },
 
@@ -373,9 +390,10 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
       rematchButton.removeEventListener('click', onRematch);
       disconnectedLobbyButton.removeEventListener('click', onToLobby);
       soloStartButton.removeEventListener('click', onSolo);
+      soloResetButton.removeEventListener('click', onSoloReset);
       soloAgainButton.removeEventListener('click', onSolo);
       soloLobbyButton.removeEventListener('click', onToLobby);
-      gameExitButton.removeEventListener('click', onSoloExit);
+      gameExitButton.removeEventListener('click', onGameExit);
     },
   };
 }

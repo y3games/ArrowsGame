@@ -39,11 +39,11 @@ export function registerSocketHandlers(io: AppServer): void {
     socket.on('room:leave', () => rooms.leave(socket, 'leave'));
     socket.on('rematch:vote', () => rooms.vote(socket));
 
-    socket.on('solo:start', () => {
+    socket.on('solo:start', (payload) => {
       if (rooms.isSeated(socket)) return void socket.emit('room:error', { code: 'already_in_room' });
       // "Play again" comes straight after the previous run; a stale one must not keep running.
       soloGames.get(socket.id)?.dispose();
-      const game: SoloGame = new SoloGame(socket, () => endSolo(socket, game));
+      const game: SoloGame = new SoloGame(socket, payload?.level ?? 1, () => endSolo(socket, game));
       soloGames.set(socket.id, game);
       rooms.leaveLobby(socket);
       game.start();

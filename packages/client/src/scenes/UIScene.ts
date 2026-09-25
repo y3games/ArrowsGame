@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-import { GAMEPLAY } from '@arrows/shared';
-import { RENDER, getCellSize, getGridLeft } from '../game/config.js';
+import { RENDER, getBoardSize, getCellSize, getGridLeft, getGridTop } from '../game/config.js';
 import { gameEvents, type GameEventMap } from '../net/events.js';
 import { formatClock, outcomeLabel } from '../game/summary.js';
 
@@ -157,15 +156,16 @@ export class UIScene extends Phaser.Scene {
   /** A frame around the board in the colour of whoever's turn it is — readable at a glance. */
   private drawGridFrame(turn: { yours: boolean } | null): void {
     const size = getCellSize();
+    const { rows, cols } = getBoardSize();
     const pad = 4;
     const color = turn === null ? RENDER.COLORS.gridFrameIdle : turn.yours ? RENDER.COLORS.you : RENDER.COLORS.opponent;
     this.gridFrame.clear();
     this.gridFrame.lineStyle(4, color, 1);
     this.gridFrame.strokeRoundedRect(
       getGridLeft() - pad,
-      RENDER.GRID_TOP - pad,
-      size * GAMEPLAY.GRID_COLS + pad * 2,
-      size * GAMEPLAY.GRID_ROWS + pad * 2,
+      getGridTop() - pad,
+      size * cols + pad * 2,
+      size * rows + pad * 2,
       8,
     );
   }
@@ -223,15 +223,15 @@ export class UIScene extends Phaser.Scene {
     this.turn = null;
     this.overlayText.setVisible(false);
     this.solo = { timeLimitMs: payload.timeLimitMs, deadline: payload.startsAt + payload.timeLimitMs, mistakes: 0, over: false, frozenMs: 0 };
-    this.roundIndicatorText.setText('싱글 모드 · 3분 안에 모두 제거하세요 (실수 시 -10초)');
+    this.roundIndicatorText.setText(`레벨 ${payload.level} · 3분 안에 모두 제거하세요 (실수 시 -10초)`);
     this.youScoreText.setText('실수 0회').setColor(css(RENDER.COLORS.countdownWarn)).setX(RENDER.CANVAS_WIDTH / 2);
     this.scoreSeparator.setVisible(false);
     this.opponentScoreText.setText('');
     this.remainingText.setText(`남은 화살표: ${payload.total}`);
-    this.turnBanner.setText('싱글 모드').setBackgroundColor(css(RENDER.COLORS.you));
+    this.turnBanner.setText(`레벨 ${payload.level}`).setBackgroundColor(css(RENDER.COLORS.you));
     this.drawGridFrame({ yours: true });
     this.countdownTarget = payload.startsAt;
-    this.countdownText = { text: '싱글 모드 · 3분', color: RENDER.COLORS.you };
+    this.countdownText = { text: `레벨 ${payload.level} · ${payload.total}개`, color: RENDER.COLORS.you };
   };
 
   private onSoloUpdate = (payload: GameEventMap['solo:update']): void => {
@@ -250,7 +250,7 @@ export class UIScene extends Phaser.Scene {
       this.solo.frozenMs = payload.timeLeftMs;
     }
     this.hideCountdown();
-    this.turnBanner.setText(payload.outcome === 'cleared' ? '클리어!' : '시간 초과');
+    this.turnBanner.setText(payload.outcome === 'cleared' ? '레벨 클리어!' : '시간 초과');
   };
 
   /** A short pop in the middle of the board. */

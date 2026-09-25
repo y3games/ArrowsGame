@@ -13,7 +13,7 @@ export interface NetworkClient {
   /** Also how a player says "나가기" on the result screen. */
   leaveRoom(): void;
   voteRematch(): void;
-  startSolo(): void;
+  startSolo(level: number): void;
   soloClick(gameId: string, arrowId: string): void;
   leaveSolo(): void;
   sendReady(matchId: string, roundIndex: number): void;

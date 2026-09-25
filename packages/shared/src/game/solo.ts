@@ -1,5 +1,5 @@
 import type { Board } from './types.js';
-import { SOLO } from './config.js';
+import { GAMEPLAY, SOLO } from './config.js';
 import { isEscapable, occupiedCells } from './rules.js';
 
 /**
@@ -57,4 +57,47 @@ export function applySoloMove(state: SoloState, arrowId: string, now: number): S
   state.mistakes += 1;
   const timeLeftMs = soloTimeLeftMs(state, now);
   return { type: 'blocked', arrowId, mistakes: state.mistakes, timeLeftMs, timedOut: timeLeftMs <= 0 };
+}
+
+/** How the board for one solo level is laid out — the inputs of `generateBoard`. */
+export interface SoloLevelConfig {
+  level: number;
+  rows: number;
+  cols: number;
+  minLength: number;
+  maxLength: number;
+  fill: number;
+  straightBias: number;
+  interlock: number;
+  centerPull: number;
+}
+
+/** Anything a client sends is coerced to a whole level between 1 and `SOLO.MAX_LEVEL`. */
+export function clampSoloLevel(level: unknown): number {
+  const n = typeof level === 'number' && Number.isFinite(level) ? Math.floor(level) : 1;
+  return Math.min(SOLO.MAX_LEVEL, Math.max(1, n));
+}
+
+/**
+ * The difficulty curve. Every knob only ever moves in the harder direction, and they keep moving
+ * until about level 20, so there is always a next step:
+ *  - the map grows two rows and columns per level up to the full size (level 11);
+ *  - arrows get more numerous (the middle of the map is filled more — `centerPull`), longer and
+ *    more winding (lower `straightBias`), and more interlocked (longer chains of "this one must go
+ *    before that one"). About 16 arrows on level 1, about 60 at full size, 100+ by level 17.
+ */
+export function soloLevelConfig(levelInput: number): SoloLevelConfig {
+  const level = clampSoloLevel(levelInput);
+  const size = (max: number): number => Math.min(max, 10 + 2 * (level - 1));
+  return {
+    level,
+    rows: size(GAMEPLAY.GRID_ROWS),
+    cols: size(GAMEPLAY.GRID_COLS),
+    minLength: Math.min(5, 2 + Math.floor((level - 1) / 4)),
+    maxLength: Math.min(24, 6 + level),
+    fill: Math.min(0.95, 0.7 + 0.01 * level),
+    straightBias: Math.max(0.1, 0.5 - 0.02 * level),
+    interlock: Math.min(14, 2 + level),
+    centerPull: Math.min(10, 2 + Math.floor((level - 1) / 2)),
+  };
 }

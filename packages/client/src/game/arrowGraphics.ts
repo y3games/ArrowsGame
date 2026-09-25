@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
-import { DIRECTION_DELTA, GAMEPLAY, headOf, type ArrowDTO } from '@arrows/shared';
-import { cellToPosition, getCellSize } from './config.js';
+import { DIRECTION_DELTA, headOf, type ArrowDTO } from '@arrows/shared';
+import { cellToPosition, getBoardSize, getCellSize } from './config.js';
 
 export interface Point {
   x: number;
@@ -16,8 +16,8 @@ export function bodyPoints(arrow: ArrowDTO): Point[] {
 function rayLength(arrow: ArrowDTO): number {
   const head = headOf(arrow);
   const { dr, dc } = DIRECTION_DELTA[arrow.dir];
-  const cellsToEdge =
-    dr < 0 ? head.row : dr > 0 ? GAMEPLAY.GRID_ROWS - 1 - head.row : dc < 0 ? head.col : GAMEPLAY.GRID_COLS - 1 - head.col;
+  const { rows, cols } = getBoardSize();
+  const cellsToEdge = dr < 0 ? head.row : dr > 0 ? rows - 1 - head.row : dc < 0 ? head.col : cols - 1 - head.col;
   return (cellsToEdge + 0.5) * getCellSize();
 }
 
@@ -74,9 +74,10 @@ export function drawSnake(g: Phaser.GameObjects.Graphics, points: Point[], color
   g.clear();
   if (points.length === 0) return;
   const size = getCellSize();
-  const thickness = size * 0.3;
-  const headLength = size * 0.42;
-  const headHalfWidth = size * 0.3;
+  // Cells get small on big maps, so the body keeps a minimum thickness to stay readable.
+  const thickness = Math.max(5, size * 0.3);
+  const headLength = Math.max(8, size * 0.42);
+  const headHalfWidth = Math.max(6, size * 0.3);
 
   g.lineStyle(thickness, color, 1);
   g.fillStyle(color, 1);

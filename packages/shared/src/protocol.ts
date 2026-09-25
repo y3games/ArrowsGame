@@ -28,7 +28,8 @@ export interface ClientToServerEvents {
   'room:join': (payload: { roomId: string; nickname?: string }) => void;
   'room:leave': () => void;
   'rematch:vote': () => void;
-  'solo:start': () => void;
+  /** `level` is the one to play; anything out of range is coerced. */
+  'solo:start': (payload: { level?: number }) => void;
   'solo:click': (payload: { gameId: string; arrowId: string }) => void;
   /** Gives up a running solo game and goes back to the lobby. */
   'solo:leave': () => void;
@@ -82,6 +83,7 @@ export interface ServerToClientEvents {
   }) => void;
   'solo:started': (payload: {
     gameId: string;
+    level: number;
     board: BoardDTO;
     /** Time until the clock starts, measured from receipt so client and server clocks need not agree. */
     startsInMs: number;
@@ -96,6 +98,7 @@ export interface ServerToClientEvents {
     timeLeftMs: number;
   }) => void;
   'solo:finished': (payload: {
+    level: number;
     outcome: 'cleared' | 'timeout';
     timeLeftMs: number;
     /** Wall-clock time from the clock starting to the last arrow (or to the time-out). */

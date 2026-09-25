@@ -91,6 +91,7 @@ export class Match {
       fill: GAMEPLAY.BOARD_FILL,
       straightBias: GAMEPLAY.ARROW_STRAIGHT_BIAS,
       interlock: GAMEPLAY.BOARD_INTERLOCK,
+      centerPull: GAMEPLAY.BOARD_CENTER_PULL,
     });
     // The first round's opener is random (set at construction); later rounds follow nextFirstPlayer().
     const startsAt = Date.now() + GAMEPLAY.ROUND_START_GRACE_MS;
