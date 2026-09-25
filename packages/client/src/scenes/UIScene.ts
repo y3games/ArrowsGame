@@ -35,15 +35,15 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.opponentText = this.add
-      .text(RENDER.CANVAS_WIDTH / 2, 750, '', { fontSize: '18px', color: '#a5adce' })
+      .text(RENDER.CANVAS_WIDTH / 2, 795, '', { fontSize: '18px', color: '#a5adce' })
       .setOrigin(0.5);
 
     this.remainingText = this.add
-      .text(RENDER.CANVAS_WIDTH / 2, 780, '', { fontSize: '22px', color: '#e8eaf6' })
+      .text(RENDER.CANVAS_WIDTH / 2, 830, '', { fontSize: '22px', color: '#e8eaf6' })
       .setOrigin(0.5);
 
     this.stopwatchText = this.add
-      .text(RENDER.CANVAS_WIDTH / 2, 820, '', { fontSize: '20px', color: '#a5adce' })
+      .text(RENDER.CANVAS_WIDTH / 2, 870, '', { fontSize: '20px', color: '#a5adce' })
       .setOrigin(0.5);
 
     this.countdownRing = this.add.graphics();

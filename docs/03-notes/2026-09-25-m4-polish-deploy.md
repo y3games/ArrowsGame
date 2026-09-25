@@ -39,12 +39,19 @@
 5. Actions에서 "Deploy to GitHub Pages" 워크플로를 다시 실행(`workflow_dispatch`).
    → `https://y3games.github.io/ArrowsGame/`에서 접속.
 
+## 배포 결과
+
+- 클라이언트: https://y3games.github.io/ArrowsGame/ (저장소 `y3games/ArrowsGame`, PUBLIC)
+- 서버: https://arrows-game-server.onrender.com — `VITE_SERVER_URL` 저장소 변수로 등록하고 배포 워크플로를
+  다시 실행해 번들에 반영했다. 위 단계 1~5를 모두 완료했다.
+
 ## 참고사항 / 남은 이슈
 
 - `packages/client/.env.example`(`VITE_SERVER_URL=http://localhost:4000`)은 만들어 두었다. 다만 작업
   세션의 권한 규칙이 `.env*` 읽기를 막아 내용을 다시 열어 확인하지는 못했다.
-- Render 무료 플랜은 유휴 시 잠들어 첫 접속이 30초 이상 걸린다. 배포 후 실제 콜드 스타트에서 안내
-  문구가 어떻게 보이는지는 아직 확인하지 못했다.
-- 이 작업 중 확인만 하고 고치지 않은 것: 게임 중 화면 아래쪽 HUD 텍스트("상대 남은 화살표" 등)가
-  8×8 보드의 마지막 줄 타일과 겹친다(`RENDER.GRID_TOP`/HUD y 좌표 조정 필요).
+- Render 무료 플랜은 유휴 시 잠들어 첫 접속이 30초 이상 걸린다. 콜드 스타트에서 안내 문구가 어떻게
+  보이는지는 확인하지 못했다(확인 시점에 서버가 이미 깨어 있었다).
+- 배포 환경에서는 상대의 접속 종료를 서버가 감지하기까지 약 10초 걸린다(로컬은 즉시).
+- 해결됨: 게임 중 화면 아래쪽 HUD 텍스트("상대 남은 화살표" 등)가 8×8 보드의 마지막 줄 타일(하단 y≈754)과
+  겹치던 문제. `UIScene`의 HUD 텍스트 y 좌표를 795/830/870으로 내려 보드 아래에 배치했다.
 - 접속이 끊긴 매치는 복구하지 않는다(재접속은 범위 밖). 서버가 이미 상대 승리로 처리한다.
