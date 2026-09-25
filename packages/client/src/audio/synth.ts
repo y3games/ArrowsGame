@@ -141,3 +141,73 @@ export function playBlockedSfx(ctx: BaseAudioContext, dest: AudioNode, start: nu
   playTone(ctx, dest, { freq: 185, glideTo: 104, start, duration: 0.3, type: 'sawtooth', gain: 0.22, cutoff: 900, attack: 0.004, release: 0.08 });
   playTone(ctx, dest, { freq: 138, glideTo: 78, start: start + 0.11, duration: 0.24, type: 'square', gain: 0.1, cutoff: 700, attack: 0.004, release: 0.08 });
 }
+
+/** A short two-note chime going up: "it's your turn". */
+export function playTurnMineSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playTone(ctx, dest, { freq: 659.25, start, duration: 0.09, type: 'sine', gain: 0.3, attack: 0.004, release: 0.07 });
+  playTone(ctx, dest, { freq: 987.77, start: start + 0.09, duration: 0.16, type: 'sine', gain: 0.3, attack: 0.004, release: 0.14 });
+  playTone(ctx, dest, { freq: 1975.5, start: start + 0.09, duration: 0.1, type: 'triangle', gain: 0.07, attack: 0.004, release: 0.1 });
+}
+
+/** One low, soft tick: the turn went to the opponent. Quiet on purpose — it is not your move. */
+export function playTurnOppSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playTone(ctx, dest, { freq: 311.13, glideTo: 261.63, start, duration: 0.11, type: 'triangle', gain: 0.2, attack: 0.004, release: 0.08 });
+}
+
+/** A beep for each second of the pre-round countdown. */
+export function playCountdownSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playTone(ctx, dest, { freq: 880, start, duration: 0.09, type: 'square', gain: 0.1, cutoff: 3000, attack: 0.003, release: 0.05 });
+  playTone(ctx, dest, { freq: 880, start, duration: 0.09, type: 'sine', gain: 0.2, attack: 0.003, release: 0.05 });
+}
+
+/** The countdown reached zero: a longer, higher two-beep "go!". */
+export function playGoSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  for (const [offset, freq] of [[0, 1318.5], [0.11, 1760]] as const) {
+    playTone(ctx, dest, { freq, start: start + offset, duration: offset === 0 ? 0.09 : 0.3, type: 'square', gain: 0.1, cutoff: 3600, attack: 0.003, release: 0.1 });
+    playTone(ctx, dest, { freq, start: start + offset, duration: offset === 0 ? 0.09 : 0.3, type: 'sine', gain: 0.24, attack: 0.003, release: 0.1 });
+  }
+}
+
+/** Notes played one after another, each `gap` seconds apart. */
+function playRun(ctx: BaseAudioContext, dest: AudioNode, start: number, notes: number[], gap: number, options: Omit<ToneOptions, 'freq' | 'start'>): void {
+  notes.forEach((freq, i) => playTone(ctx, dest, { ...options, freq, start: start + i * gap }));
+}
+
+const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, G4 = 392, E4 = 329.63, D4 = 293.66, C4 = 261.63, B3 = 246.94;
+
+/** A round is won: a quick bright arpeggio going up. */
+export function playRoundWinSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [C5, E5, G5, C6], 0.085, { duration: 0.12, type: 'triangle', gain: 0.3, attack: 0.004, release: 0.1 });
+  playTone(ctx, dest, { freq: C6 * 2, start: start + 0.26, duration: 0.2, type: 'sine', gain: 0.08, attack: 0.004, release: 0.2 });
+}
+
+/** A round is lost: three notes stepping down, soft and a little sad. */
+export function playRoundLoseSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [G4, E4, C4], 0.14, { duration: 0.16, type: 'triangle', gain: 0.3, attack: 0.006, release: 0.12 });
+}
+
+/** A drawn round: two level notes — neither up nor down. */
+export function playRoundDrawSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [E5, E5], 0.16, { duration: 0.13, type: 'triangle', gain: 0.26, attack: 0.005, release: 0.1 });
+}
+
+/** The whole match (or solo run) is won: a fanfare that ends on a held chord. */
+export function playWinSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [C5, C5, C5, G5], 0.11, { duration: 0.1, type: 'square', gain: 0.09, cutoff: 3200, attack: 0.004, release: 0.06 });
+  const chordAt = start + 0.5;
+  for (const freq of [C5, E5, G5, C6]) {
+    playTone(ctx, dest, { freq, start: chordAt, duration: 0.9, type: 'triangle', gain: 0.17, attack: 0.01, release: 0.4 });
+    playTone(ctx, dest, { freq, start: chordAt, duration: 0.9, type: 'square', gain: 0.035, cutoff: 2600, attack: 0.01, release: 0.4 });
+  }
+}
+
+/** The whole match (or solo run) is lost: a slow fall ending on a low, held note. */
+export function playLoseSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [E4, D4, C4, B3], 0.2, { duration: 0.2, type: 'triangle', gain: 0.32, attack: 0.008, release: 0.15 });
+  playTone(ctx, dest, { freq: 130.81, glideTo: 98, start: start + 0.8, duration: 0.9, type: 'sawtooth', gain: 0.12, cutoff: 500, attack: 0.02, release: 0.4 });
+}
+
+/** A drawn match: a settled, neutral two-chord "ok, that's that". */
+export function playDrawSfx(ctx: BaseAudioContext, dest: AudioNode, start: number): void {
+  playRun(ctx, dest, start, [G4, C5], 0.22, { duration: 0.3, type: 'triangle', gain: 0.28, attack: 0.008, release: 0.25 });
+}

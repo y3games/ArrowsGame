@@ -1,5 +1,20 @@
 import { buildTrack, stepSeconds, type Mood, type Track } from './score.js';
-import { noiseBuffer, playBlockedSfx, playRemoveSfx, scheduleStep } from './synth.js';
+import {
+  noiseBuffer,
+  playBlockedSfx,
+  playCountdownSfx,
+  playDrawSfx,
+  playGoSfx,
+  playLoseSfx,
+  playRemoveSfx,
+  playRoundDrawSfx,
+  playRoundLoseSfx,
+  playRoundWinSfx,
+  playTurnMineSfx,
+  playTurnOppSfx,
+  playWinSfx,
+  scheduleStep,
+} from './synth.js';
 
 const MUTE_KEY = 'arrows.muted';
 const MUSIC_LEVEL = 0.45;
@@ -10,7 +25,24 @@ const LOOKAHEAD_S = 0.15;
 const TICK_MS = 25;
 const FADE_S = 0.25;
 
-export type SfxKind = 'remove' | 'blocked';
+/**
+ * remove/blocked: an arrow left / a tap on a blocked one. turn-mine/turn-opp: the turn changed
+ * hands. countdown/go: the pre-round (or pre-run) countdown. round-*: a round ended.
+ * win/lose/draw: the whole match, or a solo run, ended.
+ */
+export type SfxKind =
+  | 'remove'
+  | 'blocked'
+  | 'turn-mine'
+  | 'turn-opp'
+  | 'countdown'
+  | 'go'
+  | 'round-win'
+  | 'round-lose'
+  | 'round-draw'
+  | 'win'
+  | 'lose'
+  | 'draw';
 
 interface Player {
   mood: Mood;
@@ -48,6 +80,8 @@ export class AudioEngine {
   private muted = readMuted();
   private listeners = new Set<() => void>();
   private sfxPlayed = 0;
+  /** The most recent effects, oldest first — only for tests to look at. */
+  private sfxLog: SfxKind[] = [];
 
   /** Starts listening for the first user gesture, which is what allows sound at all. */
   attach(): void {
@@ -150,13 +184,33 @@ export class AudioEngine {
     this.switchTo(mood);
   }
 
-  playSfx(kind: SfxKind, own = true): void {
+  /**
+   * `own` is false for the opponent's removals (lower and quieter). `delay` postpones the sound a
+   * little, so two effects triggered by the same event do not pile on top of each other.
+   */
+  playSfx(kind: SfxKind, own = true, delay = 0): void {
     const ctx = this.ctx;
-    if (!ctx || !this.sfxBus || !this.noise || ctx.state !== 'running') return;
-    const start = ctx.currentTime + 0.005;
-    if (kind === 'remove') playRemoveSfx(ctx, this.sfxBus, this.noise, start, own);
-    else playBlockedSfx(ctx, this.sfxBus, start);
+    const bus = this.sfxBus;
+    const noise = this.noise;
+    if (!ctx || !bus || !noise || ctx.state !== 'running') return;
+    const start = ctx.currentTime + 0.005 + delay;
+    switch (kind) {
+      case 'remove': playRemoveSfx(ctx, bus, noise, start, own); break;
+      case 'blocked': playBlockedSfx(ctx, bus, start); break;
+      case 'turn-mine': playTurnMineSfx(ctx, bus, start); break;
+      case 'turn-opp': playTurnOppSfx(ctx, bus, start); break;
+      case 'countdown': playCountdownSfx(ctx, bus, start); break;
+      case 'go': playGoSfx(ctx, bus, start); break;
+      case 'round-win': playRoundWinSfx(ctx, bus, start); break;
+      case 'round-lose': playRoundLoseSfx(ctx, bus, start); break;
+      case 'round-draw': playRoundDrawSfx(ctx, bus, start); break;
+      case 'win': playWinSfx(ctx, bus, start); break;
+      case 'lose': playLoseSfx(ctx, bus, start); break;
+      case 'draw': playDrawSfx(ctx, bus, start); break;
+    }
     this.sfxPlayed++;
+    this.sfxLog.push(kind);
+    if (this.sfxLog.length > 60) this.sfxLog.shift();
   }
 
   isMuted(): boolean {
@@ -182,13 +236,14 @@ export class AudioEngine {
   }
 
   /** Dev/test only: what the engine is doing right now. */
-  debugState(): { state: string; mood: Mood; playing: Mood | null; muted: boolean; sfxPlayed: number } {
+  debugState(): { state: string; mood: Mood; playing: Mood | null; muted: boolean; sfxPlayed: number; sfxLog: SfxKind[] } {
     return {
       state: this.ctx?.state ?? 'locked',
       mood: this.mood,
       playing: this.player?.mood ?? null,
       muted: this.muted,
       sfxPlayed: this.sfxPlayed,
+      sfxLog: [...this.sfxLog],
     };
   }
 }

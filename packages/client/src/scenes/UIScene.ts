@@ -27,6 +27,10 @@ export class UIScene extends Phaser.Scene {
 
   /** `performance.now()` at which the pre-round countdown ends; null outside it. */
   private countdownTarget: number | null = null;
+  /** The countdown number last beeped for, so each second beeps once. */
+  private lastCountNumber = 0;
+  /** A round-result jingle waiting to see whether the whole match ends right after it. */
+  private roundResultSfx: Phaser.Time.TimerEvent | null = null;
   private youFirst = false;
   private turn: { yours: boolean; startedAt: number; durationMs: number } | null = null;
   /** Non-null while a solo run is on screen. `deadline` is on the `performance.now()` clock. */
@@ -153,6 +157,7 @@ export class UIScene extends Phaser.Scene {
 
   private hideCountdown(): void {
     this.countdownTarget = null;
+    this.lastCountNumber = 0;
     this.countNumber.setVisible(false);
     this.countLabel.setVisible(false);
   }
@@ -186,6 +191,8 @@ export class UIScene extends Phaser.Scene {
 
   private onMatchReset = (): void => {
     this.hideCountdown();
+    this.roundResultSfx?.remove();
+    this.roundResultSfx = null;
     this.turn = null;
     this.solo = null;
     audio.setMood('cheerful');
@@ -255,6 +262,7 @@ export class UIScene extends Phaser.Scene {
       this.solo.frozenMs = payload.timeLeftMs;
     }
     audio.setMood('cheerful');
+    audio.playSfx(payload.outcome === 'cleared' ? 'win' : 'lose');
     this.hideCountdown();
     this.turnBanner.setText(payload.outcome === 'cleared' ? '레벨 클리어!' : '시간 초과');
   };
@@ -272,6 +280,8 @@ export class UIScene extends Phaser.Scene {
     this.turn = payload;
     this.setBanner(payload);
     this.drawGridFrame(payload);
+    // A little after any effect for the tap that ended the previous turn, so the two don't blur together.
+    audio.playSfx(payload.yours ? 'turn-mine' : 'turn-opp', true, 0.18);
 
     // A brief pop in the middle of the board, so a turn change can't go unnoticed.
     if (payload.yours) this.popText('내 차례!', RENDER.COLORS.you, 1.15, 1);
@@ -290,6 +300,11 @@ export class UIScene extends Phaser.Scene {
     this.setBanner(null);
     this.drawGridFrame(null);
     this.turnFlash.setAlpha(0);
+    // If the match is over too, its own fanfare replaces this jingle (see onMatchFinished).
+    this.roundResultSfx?.remove();
+    this.roundResultSfx = this.time.delayedCall(200, () => {
+      audio.playSfx(payload.result === 'win' ? 'round-win' : payload.result === 'lose' ? 'round-lose' : 'round-draw');
+    });
     const headline =
       payload.result === 'win' ? '이 라운드 승리!' : payload.result === 'lose' ? '이 라운드 패배…' : '이 라운드 무승부';
     this.showOverlay(
@@ -303,6 +318,9 @@ export class UIScene extends Phaser.Scene {
     this.hideCountdown();
     this.drawGridFrame(null);
     this.setBanner(null);
+    this.roundResultSfx?.remove();
+    this.roundResultSfx = null;
+    audio.playSfx(payload.result);
     this.turnBanner.setText(outcomeLabel(payload.result));
     this.overlayText.setVisible(false);
   };
@@ -311,8 +329,15 @@ export class UIScene extends Phaser.Scene {
     if (this.countdownTarget !== null) {
       const remainingMs = this.countdownTarget - performance.now();
       if (remainingMs <= 0) {
+        // A solo run starts the instant the countdown ends; a match starts with the server's first turn:start.
+        if (this.solo) audio.playSfx('go');
         this.hideCountdown();
       } else {
+        const number = Math.ceil(remainingMs / 1000);
+        if (number !== this.lastCountNumber) {
+          this.lastCountNumber = number;
+          audio.playSfx('countdown');
+        }
         this.countNumber.setText(`${Math.ceil(remainingMs / 1000)}`).setVisible(true);
         this.countLabel
           .setText(this.countdownText.text)

@@ -77,7 +77,11 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
   Browsers block sound until the first click/key, so `AudioEngine.attach()` waits for a gesture and
   `setMood()` before that only remembers the choice. Two tunes: `cheerful` loops forever, `tense`
   replaces it while a solo run has ≤ 10 s left (`UIScene` drives it every frame; multiplayer never
-  goes tense). The ♪ button (top right, above the lobby overlay) mutes and is remembered.
+  goes tense). The ♪ button (top right, above the lobby overlay) mutes and is remembered. Effects
+  beyond remove/blocked (turn change, countdown beeps, round/match results) are triggered from
+  `UIScene`, which already reacts to those events; the round-result jingle waits 200 ms so a match
+  ending right after it can replace it with its own fanfare. Phaser's own audio is switched off
+  (`audio: { noAudio: true }` in `main.ts`) so there is exactly one AudioContext.
 - **Every arrow has at least 2 cells** (`MIN_ARROW_LENGTH`). `generateBoard` has a `centerPull` option
   because reverse construction otherwise leaves the middle of big maps empty.
 - **Players meet in rooms, not a random queue.** The lobby lists open rooms (`rooms:list`, `n/2`);
