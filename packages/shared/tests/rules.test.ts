@@ -1,22 +1,50 @@
 import { describe, expect, it } from 'vitest';
-import { currentWindowStart } from '../src/game/rules.js';
+import { findEscapableArrows, isEscapable, occupiedCells } from '../src/game/rules.js';
+import type { Board } from '../src/game/types.js';
 
-describe('currentWindowStart', () => {
-  it('stays on the same window while now is inside it', () => {
-    expect(currentWindowStart(1000, 1000, 10_000)).toBe(1000);
-    expect(currentWindowStart(1000, 10_999, 10_000)).toBe(1000);
+/**
+ * 4x4 board. Snake "a" lies along row 1 (cols 0-2) with its head at (1,2) pointing right, straight
+ * at (1,3) — the head of snake "b", which runs up column 3 and points off the top edge.
+ */
+const board: Board = {
+  rows: 4,
+  cols: 4,
+  arrows: [
+    { id: 'a', cells: [{ row: 1, col: 0 }, { row: 1, col: 1 }, { row: 1, col: 2 }], dir: 'right' },
+    { id: 'b', cells: [{ row: 3, col: 3 }, { row: 2, col: 3 }, { row: 1, col: 3 }], dir: 'up' },
+  ],
+};
+
+describe('escape rule', () => {
+  it('blocks a snake whose head faces another arrow', () => {
+    const all = new Set(['a', 'b']);
+    expect(isEscapable(board, occupiedCells(board, all), board.arrows[0]!)).toBe(false);
   });
 
-  it('moves to the next window exactly on the boundary', () => {
-    expect(currentWindowStart(1000, 11_000, 10_000)).toBe(11_000);
+  it('lets a snake out when its way to the edge is empty', () => {
+    const all = new Set(['a', 'b']);
+    expect(isEscapable(board, occupiedCells(board, all), board.arrows[1]!)).toBe(true);
   });
 
-  it('skips several elapsed windows at once', () => {
-    expect(currentWindowStart(0, 35_000, 10_000)).toBe(30_000);
-    expect(currentWindowStart(500, 30_499, 10_000)).toBe(20_500);
+  it('frees a blocked snake once the blocker is gone', () => {
+    expect(findEscapableArrows(board, new Set(['a', 'b'])).map((a) => a.id)).toEqual(['b']);
+    expect(findEscapableArrows(board, new Set(['a'])).map((a) => a.id)).toEqual(['a']);
   });
 
-  it('keeps the first window when now is before it opened', () => {
-    expect(currentWindowStart(1000, 500, 10_000)).toBe(1000);
+  it('is blocked by any cell of another arrow, not just its head', () => {
+    // x's path crosses (1,2), which is y's tail cell — not its head — and that is enough to block x.
+    const sideways: Board = {
+      rows: 3,
+      cols: 3,
+      arrows: [
+        { id: 'x', cells: [{ row: 1, col: 0 }], dir: 'right' },
+        { id: 'y', cells: [{ row: 1, col: 2 }, { row: 2, col: 2 }], dir: 'down' },
+      ],
+    };
+    expect(findEscapableArrows(sideways, new Set(['x', 'y'])).map((a) => a.id)).toEqual(['y']);
+  });
+
+  it('ignores removed arrows', () => {
+    expect(occupiedCells(board, new Set(['b'])).size).toBe(3);
   });
 });

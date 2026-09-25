@@ -2,43 +2,48 @@ import { randomUUID } from 'node:crypto';
 import type { Socket } from 'socket.io';
 import {
   GAMEPLAY,
-  applyAttempt,
+  applyMove,
   createMatchState,
   createRoundState,
   generateBoard,
   getMatchWinner,
+  getRoundWinner,
   isMatchOver,
+  nextFirstPlayer,
+  otherSlot,
+  passTurn,
   recordRoundResult,
-  type Board,
-  type BoardDTO,
   type MatchState,
+  type PlayerSlot,
   type PlayerTag,
   type RoundState,
 } from '@arrows/shared';
 
-type Idx = 0 | 1;
+type Idx = PlayerSlot;
 const TAGS: [PlayerTag, PlayerTag] = ['p1', 'p2'];
-const other = (i: Idx): Idx => (i === 0 ? 1 : 0);
+const other = otherSlot;
 
-interface PlayerSlot {
+interface PlayerSlotInfo {
   socket: Socket;
   nickname: string;
   ready: boolean;
-  roundState: RoundState | null;
 }
 
 /**
- * Server-authoritative state for one 1v1 match. The server is the only clock that
- * matters: every attempt is timestamped on arrival (Date.now()) and re-judged here via
- * the same @arrows/shared applyAttempt() the client runs locally for instant feedback —
- * the client's claims are never trusted directly.
+ * Server-authoritative state for one 1v1 match on shared boards. The server is the only clock
+ * that matters: every tap is timestamped on arrival (Date.now()) and judged here by the same
+ * @arrows/shared `applyMove()`, and the turn timer lives here too — a client's claims about
+ * whose turn it is or how much time is left are never trusted.
  */
 export class Match {
   readonly id = randomUUID();
-  private players: [PlayerSlot, PlayerSlot];
+  private players: [PlayerSlotInfo, PlayerSlotInfo];
   private matchState: MatchState = createMatchState();
-  private board: Board | null = null;
-  private roundOver = false;
+  private round: RoundState | null = null;
+  private roundOver = true;
+  private first: Idx = Math.random() < 0.5 ? 0 : 1;
+  private turnTimer: ReturnType<typeof setTimeout> | null = null;
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** `onFinished` fires exactly once — when the match ends normally or a player disconnects. */
   constructor(
@@ -47,8 +52,8 @@ export class Match {
     private readonly onFinished: () => void = () => {},
   ) {
     this.players = [
-      { socket: a.socket, nickname: a.nickname, ready: false, roundState: null },
-      { socket: b.socket, nickname: b.nickname, ready: false, roundState: null },
+      { socket: a.socket, nickname: a.nickname, ready: false },
+      { socket: b.socket, nickname: b.nickname, ready: false },
     ];
   }
 
@@ -68,7 +73,7 @@ export class Match {
 
   markReady(socket: Socket): void {
     const i = this.indexOf(socket);
-    if (i === -1) return;
+    if (i === -1 || !this.roundOver) return;
     this.players[i].ready = true;
     if (this.players[0].ready && this.players[1].ready) {
       this.startRound();
@@ -76,103 +81,127 @@ export class Match {
   }
 
   private startRound(): void {
-    const board = generateBoard({ rows: GAMEPLAY.GRID_ROWS, cols: GAMEPLAY.GRID_COLS, arrowCount: GAMEPLAY.ARROW_COUNT });
-    this.board = board;
-    const serverStartAt = Date.now() + GAMEPLAY.ROUND_START_GRACE_MS;
+    for (const player of this.players) player.ready = false;
+
+    const board = generateBoard({
+      rows: GAMEPLAY.GRID_ROWS,
+      cols: GAMEPLAY.GRID_COLS,
+      minLength: GAMEPLAY.ARROW_MIN_LENGTH,
+      maxLength: GAMEPLAY.ARROW_MAX_LENGTH,
+      fill: GAMEPLAY.BOARD_FILL,
+    });
+    // The first round's opener is random (set at construction); later rounds follow nextFirstPlayer().
+    const startsAt = Date.now() + GAMEPLAY.ROUND_START_GRACE_MS;
+    this.round = createRoundState(board, this.first, startsAt);
     this.roundOver = false;
 
-    for (const i of [0, 1] as const) {
-      this.players[i].ready = false;
-      this.players[i].roundState = createRoundState(board, serverStartAt);
-    }
-
-    const boardDTO: BoardDTO = board;
     for (const player of this.players) {
       player.socket.emit('round:start', {
         roundIndex: this.matchState.roundIndex,
-        board: boardDTO,
-        attemptTimeoutMs: GAMEPLAY.ATTEMPT_TIMEOUT_MS,
-        serverStartAt,
+        board,
+        first: TAGS[this.first],
+        startsInMs: GAMEPLAY.ROUND_START_GRACE_MS,
       });
     }
+
+    this.startTimer = setTimeout(() => {
+      this.startTimer = null;
+      this.announceTurn(GAMEPLAY.FIRST_TURN_MS);
+    }, GAMEPLAY.ROUND_START_GRACE_MS);
+  }
+
+  /** Tells both players whose turn it is and arms the timer that will end it. */
+  private announceTurn(durationMs: number): void {
+    const round = this.round;
+    if (!round || this.roundOver) return;
+    for (const player of this.players) {
+      player.socket.emit('turn:start', { player: TAGS[round.turn], durationMs });
+    }
+    this.clearTurnTimer();
+    this.turnTimer = setTimeout(() => this.onTurnTimeout(round), durationMs);
+  }
+
+  /** The turn ran out without a blocked tap: no penalty, the other player simply takes over. */
+  private onTurnTimeout(round: RoundState): void {
+    this.turnTimer = null;
+    if (round !== this.round || this.roundOver) return;
+    passTurn(round, Date.now());
+    this.announceTurn(GAMEPLAY.TURN_MS);
   }
 
   handleAttempt(socket: Socket, roundIndex: number, arrowId: string): void {
     const i = this.indexOf(socket);
-    if (i === -1 || this.roundOver) return;
+    const round = this.round;
+    if (i === -1 || !round || this.roundOver) return;
     if (roundIndex !== this.matchState.roundIndex) return;
 
-    const player = this.players[i];
-    if (!player.roundState) return;
+    const outcome = applyMove(round, i, arrowId, Date.now());
+    // 'rejected' (wrong turn / expired / already gone / unknown): a well-behaved client's own
+    // gating should already prevent this in normal play — silently ignore, no penalty.
+    if (outcome.type === 'rejected') return;
 
-    const outcome = applyAttempt(player.roundState, arrowId, Date.now());
-
-    if (outcome.type === 'correct') {
+    const scores = { p1: round.scores[0], p2: round.scores[1] };
+    // Both players see every tap — the removal, or the failure — so the board stays in sync.
+    for (const player of this.players) {
       player.socket.emit('attempt:result', {
+        player: TAGS[i],
         arrowId,
-        correct: true,
-        remaining: outcome.remaining,
-        lockedUntil: null,
-        finished: outcome.finished,
-        elapsedMs: outcome.elapsedMs,
+        correct: outcome.type === 'removed',
+        scores,
+        remaining: round.remainingIds.size,
       });
+    }
 
-      const opponent = this.players[other(i)];
-      opponent.socket.emit('opponent:progress', { remaining: outcome.remaining, total: this.board!.arrows.length });
-
-      if (outcome.finished) {
-        this.finishRound(i, outcome.elapsedMs ?? Date.now() - player.roundState.roundStartAt);
-      }
+    if (outcome.type === 'removed') {
+      if (outcome.finished) this.finishRound();
       return;
     }
-
-    if (outcome.type === 'wrong') {
-      player.socket.emit('attempt:result', {
-        arrowId,
-        correct: false,
-        remaining: player.roundState.remainingIds.size,
-        lockedUntil: outcome.lockedUntil,
-        finished: false,
-      });
-    }
-    // 'rejected' (locked / already-removed / unknown-arrow): the client's own optimistic
-    // state should already prevent this from happening in normal play — silently ignore.
+    // Blocked: applyMove already handed the turn over.
+    this.announceTurn(GAMEPLAY.TURN_MS);
   }
 
-  private finishRound(winnerIndex: Idx, winnerElapsedMs: number): void {
+  private finishRound(): void {
+    const round = this.round!;
     this.roundOver = true;
+    this.clearTimers();
+
+    const winner = getRoundWinner(round);
     const roundIndexJustPlayed = this.matchState.roundIndex;
-    this.matchState = recordRoundResult(this.matchState, winnerIndex);
+    this.matchState = recordRoundResult(this.matchState, winner, round.scores);
+    this.first = nextFirstPlayer(this.first, winner);
 
-    const winnerTag = TAGS[winnerIndex];
-    const times: { p1: number | null; p2: number | null } = { p1: null, p2: null };
-    times[winnerTag] = winnerElapsedMs;
-
+    const scores = { p1: round.scores[0], p2: round.scores[1] };
     const roundWins = { p1: this.matchState.roundWins[0], p2: this.matchState.roundWins[1] };
-    const remaining = {
-      p1: this.players[0].roundState?.remainingIds.size ?? 0,
-      p2: this.players[1].roundState?.remainingIds.size ?? 0,
-    };
     for (const player of this.players) {
       player.socket.emit('round:finished', {
         roundIndex: roundIndexJustPlayed,
-        winner: winnerTag,
-        times,
+        winner: winner === null ? null : TAGS[winner],
+        scores,
         roundWins,
-        remaining,
       });
     }
 
     if (isMatchOver(this.matchState)) {
-      const winner = getMatchWinner(this.matchState)!;
+      const matchWinner = getMatchWinner(this.matchState);
       for (const player of this.players) {
         player.socket.emit('match:finished', {
-          winner: TAGS[winner],
-          roundWins: { p1: this.matchState.roundWins[0], p2: this.matchState.roundWins[1] },
+          winner: matchWinner === null ? null : TAGS[matchWinner],
+          roundWins,
         });
       }
       this.onFinished();
     }
+  }
+
+  private clearTurnTimer(): void {
+    if (this.turnTimer) clearTimeout(this.turnTimer);
+    this.turnTimer = null;
+  }
+
+  private clearTimers(): void {
+    this.clearTurnTimer();
+    if (this.startTimer) clearTimeout(this.startTimer);
+    this.startTimer = null;
   }
 
   isOver(): boolean {
@@ -188,6 +217,8 @@ export class Match {
     const i = this.indexOf(socket);
     if (i === -1 || this.isOver()) return null;
 
+    this.roundOver = true;
+    this.clearTimers();
     const opponent = this.players[other(i)];
     const opponentTag = TAGS[other(i)];
     opponent.socket.emit('opponent:disconnected', { matchId: this.id });

@@ -1,17 +1,8 @@
-import type { Direction } from './game/types.js';
+import type { Arrow, Board } from './game/types.js';
 
-export interface ArrowTileDTO {
-  id: string;
-  row: number;
-  col: number;
-  dir: Direction;
-}
-
-export interface BoardDTO {
-  rows: number;
-  cols: number;
-  arrows: ArrowTileDTO[];
-}
+// The wire format is the game model itself: plain data, no behaviour.
+export type ArrowDTO = Arrow;
+export type BoardDTO = Board;
 
 export type PlayerTag = 'p1' | 'p2';
 
@@ -58,27 +49,33 @@ export interface ServerToClientEvents {
   'round:start': (payload: {
     roundIndex: number;
     board: BoardDTO;
-    attemptTimeoutMs: number;
-    serverStartAt: number;
+    /** Who opens the round. */
+    first: PlayerTag;
+    /** Time until the first turn begins, measured from receipt so client and server clocks need not agree. */
+    startsInMs: number;
   }) => void;
+  /** A turn begins — at the start of a round and whenever the turn changes hands. */
+  'turn:start': (payload: { player: PlayerTag; durationMs: number }) => void;
+  /** Sent to *both* players: the arrow is gone from the shared board (correct) or blocked (not correct). */
   'attempt:result': (payload: {
+    player: PlayerTag;
     arrowId: string;
     correct: boolean;
+    scores: { p1: number; p2: number };
     remaining: number;
-    lockedUntil: number | null;
-    finished: boolean;
-    elapsedMs?: number;
   }) => void;
-  'opponent:progress': (payload: { remaining: number; total: number }) => void;
   'round:finished': (payload: {
     roundIndex: number;
-    winner: PlayerTag;
-    times: { p1: number | null; p2: number | null };
+    /** Null when both scored the same. */
+    winner: PlayerTag | null;
+    scores: { p1: number; p2: number };
     roundWins: { p1: number; p2: number };
-    /** Arrows each player still had left when the round ended. */
-    remaining: { p1: number; p2: number };
   }) => void;
-  'match:finished': (payload: { winner: PlayerTag; roundWins: { p1: number; p2: number } }) => void;
+  'match:finished': (payload: {
+    /** Null for a draw. */
+    winner: PlayerTag | null;
+    roundWins: { p1: number; p2: number };
+  }) => void;
   'opponent:disconnected': (payload: { matchId: string }) => void;
   'error:generic': (payload: { code: string; message: string }) => void;
 }

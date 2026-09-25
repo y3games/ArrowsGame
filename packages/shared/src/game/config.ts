@@ -4,13 +4,20 @@
  * tunables (colors, tween durations, canvas size) live in the client package instead.
  */
 export const GAMEPLAY = {
-  GRID_ROWS: 8,
-  GRID_COLS: 8,
-  ARROW_COUNT: 20,
-  ATTEMPT_TIMEOUT_MS: 10_000,
+  GRID_ROWS: 9,
+  GRID_COLS: 9,
+  /** Snake length range (cells) while the board is being laid out; gaps are later filled with shorter ones. */
+  ARROW_MIN_LENGTH: 2,
+  ARROW_MAX_LENGTH: 7,
+  /** Share of the grid the arrows should cover. */
+  BOARD_FILL: 0.8,
+  /** The player who opens a round has less time than the turns that follow. */
+  FIRST_TURN_MS: 5_000,
+  TURN_MS: 10_000,
   ROUND_START_GRACE_MS: 3_000,
+  SCORE_REMOVE: 1,
+  SCORE_BLOCKED: -1,
   BEST_OF: 3,
-  BOARD_GEN_MAX_RETRIES: 200,
 } as const;
 
 export const WIN_ROUNDS_NEEDED = Math.ceil(GAMEPLAY.BEST_OF / 2);

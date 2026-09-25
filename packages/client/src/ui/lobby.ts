@@ -1,6 +1,6 @@
 import type { RoomErrorCode, RoomSnapshot, RoomSummary } from '@arrows/shared';
 import { MAX_NAME_LENGTH, loadPlayer, normalizeName, savePlayer } from '../services/player.js';
-import { describeRound, type RoundRecord } from '../game/summary.js';
+import { describeRound, type Outcome, type RoundRecord } from '../game/summary.js';
 import type { ConnectionState } from '../net/NetworkClient.js';
 
 /**
@@ -24,7 +24,7 @@ export interface LobbyHandlers {
 }
 
 export interface MatchSummary {
-  youWon: boolean;
+  result: Outcome;
   roundWins: { p1: number; p2: number };
   rounds: RoundRecord[];
 }
@@ -265,13 +265,13 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
       youVoted = false;
       opponentVoted = false;
       stopRematchTimer();
-      resultTitle.textContent = summary.youWon ? '최종 승리!' : '최종 패배…';
+      resultTitle.textContent = { win: '최종 승리!', lose: '최종 패배…', draw: '무승부' }[summary.result];
       resultScore.textContent = `${summary.roundWins.p1} : ${summary.roundWins.p2}`;
       resultRounds.replaceChildren(
         ...summary.rounds.map((record, index) => {
           const item = document.createElement('li');
           item.textContent = describeRound(record, index);
-          item.className = record.youWon ? 'won' : 'lost';
+          item.className = { win: 'won', lose: 'lost', draw: 'draw' }[record.result];
           return item;
         }),
       );

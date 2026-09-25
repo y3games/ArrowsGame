@@ -2,41 +2,44 @@ import { GAMEPLAY } from '@arrows/shared';
 
 /**
  * Rendering-only tunables. Anything that affects fairness or the network protocol
- * (grid size, arrow count, timeout duration) lives in @arrows/shared's config instead —
+ * (grid size, turn lengths, scoring) lives in @arrows/shared's config instead —
  * this file only ever adds to that, never overrides it.
  */
 export const RENDER = {
   CANVAS_WIDTH: 640,
   CANVAS_HEIGHT: 960,
-  GRID_TOP: 200,
-  GRID_MARGIN_X: 40,
-  TILE_GAP: 6,
+  GRID_TOP: 190,
+  GRID_MARGIN_X: 32,
   COUNTDOWN_RADIUS: 30,
   COUNTDOWN_Y: 100,
-  TWEEN_MS: 160,
+  /** Slide-out speed, in cells per second. */
+  SLIDE_CELLS_PER_SEC: 22,
+  FLASH_MS: 90,
   COLORS: {
     background: 0x12121c,
-    tile: 0x2b2f4a,
-    tileHover: 0x3d4266,
-    arrow: 0xe8eaf6,
-    wrongFlash: 0xe03131,
-    correctFlash: 0x37b24d,
-    lockedOverlay: 0x000000,
+    gridDot: 0x2b2f4a,
+    blockedFlash: 0xe03131,
     countdownTrack: 0x3d4266,
-    countdownFill: 0x4c6ef5,
     countdownWarn: 0xe03131,
     text: 0xe8eaf6,
+    /** You are always blue, the opponent always orange — on the HUD, the ring and the slide-out. */
+    you: 0x4c6ef5,
+    opponent: 0xff922b,
   },
+  /** Body colours, picked per arrow so neighbouring snakes are easy to tell apart. */
+  ARROW_PALETTE: [0xe8eaf6, 0x74c0fc, 0x69db7c, 0xffd43b, 0xf783ac, 0xb197fc, 0x63e6be, 0xffa94d],
 } as const;
 
-export function getTileSize(): number {
-  const usableWidth = RENDER.CANVAS_WIDTH - RENDER.GRID_MARGIN_X * 2 - RENDER.TILE_GAP * (GAMEPLAY.GRID_COLS - 1);
-  return Math.floor(usableWidth / GAMEPLAY.GRID_COLS);
+export function getCellSize(): number {
+  return Math.floor((RENDER.CANVAS_WIDTH - RENDER.GRID_MARGIN_X * 2) / GAMEPLAY.GRID_COLS);
+}
+
+/** Left edge of the grid, centred horizontally. */
+export function getGridLeft(): number {
+  return Math.floor((RENDER.CANVAS_WIDTH - getCellSize() * GAMEPLAY.GRID_COLS) / 2);
 }
 
 export function cellToPosition(row: number, col: number): { x: number; y: number } {
-  const tile = getTileSize();
-  const x = RENDER.GRID_MARGIN_X + col * (tile + RENDER.TILE_GAP) + tile / 2;
-  const y = RENDER.GRID_TOP + row * (tile + RENDER.TILE_GAP) + tile / 2;
-  return { x, y };
+  const size = getCellSize();
+  return { x: getGridLeft() + col * size + size / 2, y: RENDER.GRID_TOP + row * size + size / 2 };
 }

@@ -1,28 +1,23 @@
-import type { ArrowTile, Board } from './types.js';
-import { pathCells } from './board.js';
+import type { Arrow, Board } from './types.js';
+import { cellKey, pathCells } from './board.js';
 
-export function isEscapable(
-  rows: number,
-  cols: number,
-  occupied: ReadonlySet<string>,
-  arrow: Pick<ArrowTile, 'row' | 'col' | 'dir'>,
-): boolean {
-  return pathCells(arrow, rows, cols).every((cell) => !occupied.has(`${cell.row},${cell.col}`));
+/** Keys of every cell covered by the arrows still on the board. */
+export function occupiedCells(board: Board, remainingIds: ReadonlySet<string>): Set<string> {
+  const occupied = new Set<string>();
+  for (const arrow of board.arrows) {
+    if (!remainingIds.has(arrow.id)) continue;
+    for (const cell of arrow.cells) occupied.add(cellKey(cell));
+  }
+  return occupied;
 }
 
-/**
- * Start of the attempt window that `now` falls in, given a window that opened at `windowStart`.
- * Windows that elapsed with no click at all are skipped in whole `timeoutMs` steps; a `now`
- * before `windowStart` still belongs to that first window.
- */
-export function currentWindowStart(windowStart: number, now: number, timeoutMs: number): number {
-  if (now < windowStart) return windowStart;
-  return windowStart + Math.floor((now - windowStart) / timeoutMs) * timeoutMs;
+/** An arrow slides out only if nothing — no other arrow — sits between its head and the board edge. */
+export function isEscapable(board: Board, occupied: ReadonlySet<string>, arrow: Arrow): boolean {
+  return pathCells(arrow, board.rows, board.cols).every((cell) => !occupied.has(cellKey(cell)));
 }
 
 /** All arrows among `remainingIds` whose path to the edge is currently clear. */
-export function findEscapableArrows(board: Board, remainingIds: ReadonlySet<string>): ArrowTile[] {
-  const remaining = board.arrows.filter((a) => remainingIds.has(a.id));
-  const occupied = new Set(remaining.map((a) => `${a.row},${a.col}`));
-  return remaining.filter((a) => isEscapable(board.rows, board.cols, occupied, a));
+export function findEscapableArrows(board: Board, remainingIds: ReadonlySet<string>): Arrow[] {
+  const occupied = occupiedCells(board, remainingIds);
+  return board.arrows.filter((a) => remainingIds.has(a.id) && isEscapable(board, occupied, a));
 }

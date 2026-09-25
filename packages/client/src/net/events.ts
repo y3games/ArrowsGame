@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { PlayerTag } from '@arrows/shared';
+import type { Outcome } from '../game/summary.js';
 
 /**
  * Cross-scene communication bus (phaser-game skill: scenes never touch each other's
@@ -7,26 +8,23 @@ import type { PlayerTag } from '@arrows/shared';
  */
 export interface GameEventMap {
   'net:match-found': { opponentNickname: string; you: PlayerTag };
-  'net:round-countdown': { serverStartAt: number };
   /** The whole match is over or abandoned — UIScene wipes its labels and overlay. */
   'match:reset': Record<string, never>;
-  /** Fired the instant a new round's tiles are drawn (before the start countdown) so labels never show stale data during it. */
-  'round:preview': { total: number; roundIndex: number; roundWins: { p1: number; p2: number } };
-  /** Fired when the countdown ends and input actually unlocks — starts the stopwatch. */
-  'round:start': { startedAt: number };
-  'window:start': { windowStart: number; timeoutMs: number };
-  'attempt:correct': { remaining: number; total: number };
-  'attempt:wrong': { lockedUntil: number };
-  'opponent:progress': { remaining: number; total: number };
+  /** Fired the instant a new round's arrows are drawn (before the start countdown) so labels never show stale data during it. */
+  'round:preview': { total: number; roundIndex: number; roundWins: { p1: number; p2: number }; youFirst: boolean };
+  /** The pre-round countdown; `startsAt` is on the `performance.now()` clock. */
+  'round:countdown': { startsAt: number };
+  /** A turn begins. `startedAt` and the duration are local `performance.now()` time, never server timestamps. */
+  'turn:start': { yours: boolean; startedAt: number; durationMs: number };
+  /** Points and arrows left, after every tap by either player. */
+  'score:update': { you: number; opponent: number; remaining: number };
   'round:finished': {
-    youWon: boolean;
+    result: Outcome;
+    yourScore: number;
+    opponentScore: number;
     roundWins: { p1: number; p2: number };
-    /** The winner's clear time; null when the opponent won. */
-    yourTimeMs: number | null;
-    yourRemaining: number;
-    opponentRemaining: number;
   };
-  'match:finished': { youWon: boolean; roundWins: { p1: number; p2: number } };
+  'match:finished': { result: Outcome; roundWins: { p1: number; p2: number } };
 }
 
 class TypedEmitter extends Phaser.Events.EventEmitter {

@@ -2,11 +2,12 @@
 
 ## What this is
 
-A real-time 1v1 multiplayer arrow-escape puzzle, played as a best-of-3 match decided purely by
-time (no lives/hearts). Design and rules: `docs/01-planning/overview.md`.
+A real-time 1v1 multiplayer arrow-escape puzzle: long snake-shaped arrows on a board shared by both
+players, who take turns sliding them out (+1 point each; tapping a blocked arrow is -1 and ends the
+turn). Best-of-3 rounds, higher score wins a round. Design and rules: `docs/01-planning/overview.md`.
 
 npm-workspaces monorepo:
-- `packages/shared` — pure game logic (board generation, escape rules, attempt/round/match state)
+- `packages/shared` — pure game logic (board generation, escape rules, turn/round/match/room state)
   and the Socket.IO protocol types. No Phaser import. Both client and server import it directly.
 - `packages/client` — Phaser 3 + Vite + TypeScript.
 - `packages/server` — Node.js + Socket.IO + TypeScript (matchmaking, per-match authoritative state).
@@ -38,16 +39,19 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
 
 ## Architecture
 
-- **The server is the only clock that matters.** Every `attempt:click` is timestamped on arrival
-  and judged by the same `applyAttempt()` from `@arrows/shared` that the client also runs locally
-  for instant feedback. The client never mutates game state on its own — every tile
-  removal/lock/round-result the player sees comes from a server event. This is what makes a wrong
-  click or timeout always cost exactly a real 10 seconds, which in turn is what makes "finished
-  first" and "lowest cumulative time" the same criterion (see the timing-rule rationale in
-  `docs/01-planning/overview.md`).
+- **The server is the only clock and referee.** The board is shared, so the server owns the turn:
+  every `attempt:click` is timestamped on arrival and judged by `applyMove()` from
+  `@arrows/shared` (right player? turn still running? blocked?), and the turn timer
+  (`FIRST_TURN_MS` 5 s for a round's opener, then `TURN_MS` 10 s, no refill on removal, no penalty
+  on timeout) lives in `packages/server/src/Match.ts`. The result goes to **both** players as
+  `attempt:result` and the client only ever changes the board from that event — never on its own
+  tap. Remaining turn time is sent as a duration (`turn:start.durationMs`), not a server
+  timestamp, so client clocks never matter.
 - **Board generation is reverse-construction, not trial-and-error.** `packages/shared/src/game/board.ts`
-  builds the board by placing arrows in the reverse of their eventual escape order, which
-  guarantees solvability by construction rather than by generate-and-check.
+  places snake arrows in the reverse of their eventual escape order and only accepts one whose
+  straight path from the head to the edge is clear of everything placed so far (its own body
+  included), which guarantees solvability by construction rather than by generate-and-check. An
+  arrow is `{ id, cells (tail → head), dir }`; `dir` is the direction of the last segment.
 - **`packages/client/src/net/events.ts`'s event bus replays the last payload on subscribe.**
   `BootScene` calls `scene.start('GameScene')` then `scene.launch('UIScene')`, and Phaser does not
   guarantee `GameScene.create()` runs after `UIScene.create()` — without replay, UIScene can miss

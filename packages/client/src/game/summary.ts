@@ -1,23 +1,19 @@
-/** What the player saw at the end of one round, from their own point of view. */
+export type Outcome = 'win' | 'lose' | 'draw';
+
+/** What happened in one round, from the player's own point of view. */
 export interface RoundRecord {
-  youWon: boolean;
-  /** The winner's clear time; null when the opponent won. */
-  yourTimeMs: number | null;
-  yourRemaining: number;
-  opponentRemaining: number;
+  result: Outcome;
+  yourScore: number;
+  opponentScore: number;
 }
 
-/** "42.3초" — one decimal place everywhere a duration is shown. */
-export function formatSeconds(ms: number): string {
-  return `${(ms / 1000).toFixed(1)}초`;
+const OUTCOME_LABEL: Record<Outcome, string> = { win: '승리', lose: '패배', draw: '무승부' };
+
+export function outcomeLabel(outcome: Outcome): string {
+  return OUTCOME_LABEL[outcome];
 }
 
-/** One line of the end-of-match summary, e.g. "1라운드 승리 · 42.3초 · 상대 5개 남음". */
+/** One line of the end-of-match summary, e.g. "1라운드 승리 · 내 12점 : 상대 9점". */
 export function describeRound(record: RoundRecord, index: number): string {
-  const label = `${index + 1}라운드`;
-  if (record.youWon) {
-    const time = record.yourTimeMs !== null ? ` · ${formatSeconds(record.yourTimeMs)}` : '';
-    return `${label} 승리${time} · 상대 ${record.opponentRemaining}개 남음`;
-  }
-  return `${label} 패배 · 내 ${record.yourRemaining}개 남음`;
+  return `${index + 1}라운드 ${OUTCOME_LABEL[record.result]} · 내 ${record.yourScore}점 : 상대 ${record.opponentScore}점`;
 }

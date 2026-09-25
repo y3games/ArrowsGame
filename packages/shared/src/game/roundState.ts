@@ -1,87 +1,83 @@
 import type { Board } from './types.js';
-import { currentWindowStart, findEscapableArrows, isEscapable } from './rules.js';
+import type { PlayerSlot } from './match.js';
 import { GAMEPLAY } from './config.js';
+import { isEscapable, occupiedCells } from './rules.js';
 
+/**
+ * One round on a board that both players share: whoever removes an arrow removes it for
+ * everyone. Players alternate turns; during your turn you keep removing arrows until you tap a
+ * blocked one (-1 point, turn ends at once) or the turn timer runs out (no penalty).
+ */
 export interface RoundState {
   board: Board;
   remainingIds: Set<string>;
-  roundStartAt: number;
-  /** Start of the currently-open 10s attempt window (ms timestamp). */
-  currentWindowStart: number;
-  /** If set, no attempt is accepted until this timestamp. */
-  lockedUntil: number | null;
-  finishedAt: number | null;
+  /** Points this round, indexed by player slot. */
+  scores: [number, number];
+  turn: PlayerSlot;
+  /** No move is accepted before this timestamp (the pre-round countdown). */
+  startsAt: number;
+  turnEndsAt: number;
 }
 
-export function createRoundState(board: Board, roundStartAt: number): RoundState {
+export const otherSlot = (slot: PlayerSlot): PlayerSlot => (slot === 0 ? 1 : 0);
+
+/** The opening turn is shorter than the ones after it — see GAMEPLAY.FIRST_TURN_MS. */
+export function createRoundState(board: Board, first: PlayerSlot, startsAt: number): RoundState {
   return {
     board,
     remainingIds: new Set(board.arrows.map((a) => a.id)),
-    roundStartAt,
-    currentWindowStart: roundStartAt,
-    lockedUntil: null,
-    finishedAt: null,
+    scores: [0, 0],
+    turn: first,
+    startsAt,
+    turnEndsAt: startsAt + GAMEPLAY.FIRST_TURN_MS,
   };
 }
 
-export type AttemptOutcome =
-  | { type: 'correct'; arrowId: string; remaining: number; finished: boolean; elapsedMs?: number }
-  | { type: 'wrong'; arrowId: string; lockedUntil: number }
-  | { type: 'rejected'; reason: 'locked' | 'already-removed' | 'unknown-arrow' };
+export type MoveOutcome =
+  | { type: 'removed'; arrowId: string; remaining: number; finished: boolean }
+  | { type: 'blocked'; arrowId: string }
+  | { type: 'rejected'; reason: 'not-started' | 'not-your-turn' | 'turn-expired' | 'already-removed' | 'unknown-arrow' };
 
 /**
- * The heart of the game. `now` is injected rather than read internally, so this stays a pure,
- * deterministic function with no Phaser/clock dependency despite modeling real-time behavior —
- * it can be run identically on the server (authoritative, fed by socket receipt timestamps) and
- * on the client (optimistic local feedback), and is fully covered by vitest with synthetic clocks.
+ * `now` is injected rather than read internally, so this stays a pure, deterministic function
+ * and is fully covered by vitest with synthetic clocks. The server feeds it the arrival time of
+ * each click; it never trusts anything the client says about time or whose turn it is.
  *
- * On a wrong click or timeout, the attempt always ends up consuming exactly the full 10-second
- * window (an early wrong click locks input for the remainder of the window) — this is what keeps
- * a player's cumulative time exactly equal to real wall-clock elapsed time, so "finished first"
- * and "lowest time" are mathematically the same criterion.
+ * A blocked tap ends the turn here (the score changes and the turn passes); a merely expired
+ * turn is handed over separately by `passTurn`, because nothing arrives to trigger it.
  */
-export function applyAttempt(state: RoundState, arrowId: string, now: number): AttemptOutcome {
-  if (state.lockedUntil !== null) {
-    if (now < state.lockedUntil) {
-      return { type: 'rejected', reason: 'locked' };
-    }
-    state.currentWindowStart = state.lockedUntil;
-    state.lockedUntil = null;
-  }
-
-  // Fast-forward through any windows where nothing was clicked at all (real timeouts).
-  state.currentWindowStart = currentWindowStart(state.currentWindowStart, now, GAMEPLAY.ATTEMPT_TIMEOUT_MS);
+export function applyMove(state: RoundState, player: PlayerSlot, arrowId: string, now: number): MoveOutcome {
+  if (now < state.startsAt) return { type: 'rejected', reason: 'not-started' };
+  if (state.turn !== player) return { type: 'rejected', reason: 'not-your-turn' };
+  if (now >= state.turnEndsAt) return { type: 'rejected', reason: 'turn-expired' };
 
   const arrow = state.board.arrows.find((a) => a.id === arrowId);
-  if (!arrow) {
-    return { type: 'rejected', reason: 'unknown-arrow' };
-  }
-  if (!state.remainingIds.has(arrowId)) {
-    return { type: 'rejected', reason: 'already-removed' };
-  }
+  if (!arrow) return { type: 'rejected', reason: 'unknown-arrow' };
+  if (!state.remainingIds.has(arrowId)) return { type: 'rejected', reason: 'already-removed' };
 
-  const occupied = new Set(
-    state.board.arrows.filter((a) => state.remainingIds.has(a.id)).map((a) => `${a.row},${a.col}`),
-  );
-
-  if (isEscapable(state.board.rows, state.board.cols, occupied, arrow)) {
+  if (isEscapable(state.board, occupiedCells(state.board, state.remainingIds), arrow)) {
     state.remainingIds.delete(arrowId);
-    state.currentWindowStart = now;
-    const finished = state.remainingIds.size === 0;
-    if (finished) state.finishedAt = now;
-    return {
-      type: 'correct',
-      arrowId,
-      remaining: state.remainingIds.size,
-      finished,
-      elapsedMs: finished ? now - state.roundStartAt : undefined,
-    };
+    state.scores[player] += GAMEPLAY.SCORE_REMOVE;
+    return { type: 'removed', arrowId, remaining: state.remainingIds.size, finished: state.remainingIds.size === 0 };
   }
 
-  state.lockedUntil = state.currentWindowStart + GAMEPLAY.ATTEMPT_TIMEOUT_MS;
-  return { type: 'wrong', arrowId, lockedUntil: state.lockedUntil };
+  state.scores[player] += GAMEPLAY.SCORE_BLOCKED;
+  passTurn(state, now);
+  return { type: 'blocked', arrowId };
 }
 
-export function getEscapableArrowIds(state: RoundState): string[] {
-  return findEscapableArrows(state.board, state.remainingIds).map((a) => a.id);
+/** Hands the turn to the other player, who gets a full `TURN_MS` from `now`. */
+export function passTurn(state: RoundState, now: number): void {
+  state.turn = otherSlot(state.turn);
+  state.turnEndsAt = now + GAMEPLAY.TURN_MS;
+}
+
+export function isRoundOver(state: RoundState): boolean {
+  return state.remainingIds.size === 0;
+}
+
+/** The higher score wins the round; equal scores are a draw (null). */
+export function getRoundWinner(state: RoundState): PlayerSlot | null {
+  if (state.scores[0] === state.scores[1]) return null;
+  return state.scores[0] > state.scores[1] ? 0 : 1;
 }

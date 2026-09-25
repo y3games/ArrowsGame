@@ -1,25 +1,29 @@
 import Phaser from 'phaser';
-import { findEscapableArrows, type BoardDTO, type Direction, type PlayerTag, type RoomSummary } from '@arrows/shared';
-import { RENDER, cellToPosition, getTileSize } from '../game/config.js';
+import { GAMEPLAY, findEscapableArrows, headOf, type ArrowDTO, type BoardDTO, type PlayerTag, type RoomSummary } from '@arrows/shared';
+import { RENDER, cellToPosition, getCellSize, getGridLeft } from '../game/config.js';
+import { bodyPoints, drawSnake, slidePath, subPath } from '../game/arrowGraphics.js';
 import { gameEvents } from '../net/events.js';
 import { SocketIONetworkClient } from '../net/SocketIONetworkClient.js';
 import type { NetworkClient } from '../net/NetworkClient.js';
-import type { RoundRecord } from '../game/summary.js';
+import type { Outcome, RoundRecord } from '../game/summary.js';
 import { createLobby, type Lobby } from '../ui/lobby.js';
 
-const DIRECTION_ANGLE: Record<Direction, number> = { up: 0, right: 90, down: 180, left: 270 };
-
-interface TileSprites {
-  bg: Phaser.GameObjects.Image;
-  arrow: Phaser.GameObjects.Image;
+/** One arrow on the shared board: its drawing plus the invisible tap targets over its cells. */
+interface ArrowView {
+  arrow: ArrowDTO;
+  color: number;
+  graphics: Phaser.GameObjects.Graphics;
+  zones: Phaser.GameObjects.Zone[];
 }
 
 /** Dev-only hook so end-to-end tests can drive a real match without guessing screen coords. */
 interface ArrowsDebugHook {
+  /** Every arrow still on the board, with the centre of its head cell (a tap anywhere on it works). */
   getTiles: () => { id: string; x: number; y: number }[];
   getEscapable: () => string[];
   getYou: () => PlayerTag | null;
   getMatchId: () => string | null;
+  isMyTurn: () => boolean;
   /** The lobby's list of open rooms, as last sent by the server. */
   getRooms: () => RoomSummary[];
   /** These skip the lobby form and act directly under `name`. */
@@ -35,10 +39,10 @@ declare global {
 }
 
 /**
- * Owns rendering and input only — every judgment call (is this click correct, who won the
- * round) is made server-side; this scene just reflects whatever @arrows/shared-authoritative
- * result the server sends back over `net`. No local rule logic runs here, so there is never
- * a client/server disagreement to reconcile.
+ * Owns rendering and input only — every judgment call (is this tap a removal, whose turn is it,
+ * who won the round) is made server-side; this scene just reflects whatever @arrows/shared
+ * result the server sends back over `net`. The board is shared: an arrow leaves this screen
+ * only when the server says either player removed it, so both screens always agree.
  */
 export class GameScene extends Phaser.Scene {
   private net!: NetworkClient;
@@ -47,15 +51,14 @@ export class GameScene extends Phaser.Scene {
   private phase: 'idle' | 'room' | 'match' | 'result' | 'disconnected' = 'idle';
   private openRooms: RoomSummary[] = [];
   private rounds: RoundRecord[] = [];
-  private tiles = new Map<string, TileSprites>();
+  private arrows = new Map<string, ArrowView>();
+  private gridMask!: Phaser.Display.Masks.GeometryMask;
   private board: BoardDTO | null = null;
-  private totalArrows = 0;
-  private attemptTimeoutMs = 10_000;
   private matchId: string | null = null;
   private you: PlayerTag | null = null;
   private roundIndex = 0;
   private roundWins = { p1: 0, p2: 0 };
-  private inputLocked = true;
+  private myTurn = false;
   private roundOver = true;
   private matchOver = false;
 
@@ -65,7 +68,8 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.setBackgroundColor(RENDER.COLORS.background);
-    this.tiles.clear();
+    this.arrows.clear();
+    this.drawGridDots();
 
     this.lobby = createLobby({
       onCreateRoom: (nickname) => this.net.createRoom(nickname),
@@ -86,10 +90,15 @@ export class GameScene extends Phaser.Scene {
 
     if (import.meta.env.DEV) {
       window.__arrowsDebug = {
-        getTiles: () => Array.from(this.tiles.keys()).map((id) => this.tileDebugInfo(id)).filter((t): t is { id: string; x: number; y: number } => t !== null),
-        getEscapable: () => (this.board ? findEscapableArrows(this.board, new Set(this.tiles.keys())).map((a) => a.id) : []),
+        getTiles: () =>
+          Array.from(this.arrows.values(), ({ arrow }) => {
+            const head = headOf(arrow);
+            return { id: arrow.id, ...cellToPosition(head.row, head.col) };
+          }),
+        getEscapable: () => (this.board ? findEscapableArrows(this.board, new Set(this.arrows.keys())).map((a) => a.id) : []),
         getYou: () => this.you,
         getMatchId: () => this.matchId,
+        isMyTurn: () => this.myTurn,
         getRooms: () => this.openRooms,
         createRoom: (name) => this.net.createRoom(name),
         joinRoom: (roomId, name) => this.net.joinRoom(roomId, name),
@@ -99,10 +108,21 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private tileDebugInfo(id: string): { id: string; x: number; y: number } | null {
-    const sprites = this.tiles.get(id);
-    if (!sprites) return null;
-    return { id, x: sprites.bg.x, y: sprites.bg.y };
+  /** A faint dot per cell, and the mask that keeps sliding snakes from painting over the HUD. */
+  private drawGridDots(): void {
+    const size = getCellSize();
+    const dots = this.add.graphics();
+    dots.fillStyle(RENDER.COLORS.gridDot, 1);
+    for (let row = 0; row < GAMEPLAY.GRID_ROWS; row++) {
+      for (let col = 0; col < GAMEPLAY.GRID_COLS; col++) {
+        const { x, y } = cellToPosition(row, col);
+        dots.fillCircle(x, y, 3);
+      }
+    }
+    const clip = this.make.graphics({}, false);
+    clip.fillStyle(0xffffff, 1);
+    clip.fillRect(getGridLeft(), RENDER.GRID_TOP, size * GAMEPLAY.GRID_COLS, size * GAMEPLAY.GRID_ROWS);
+    this.gridMask = clip.createGeometryMask();
   }
 
   /**
@@ -110,22 +130,30 @@ export class GameScene extends Phaser.Scene {
    * socket, lobby and UIScene all live across matches.
    */
   private resetMatch(): void {
-    // Pending delayed calls (ready pings, input unlock, wrong-click unlock) belong to the old match.
+    // Pending delayed calls (the next-round ready ping, flashes) belong to the old match.
     this.time.removeAllEvents();
-    this.clearTiles();
+    this.clearArrows();
     this.board = null;
-    this.totalArrows = 0;
     this.matchId = null;
     this.you = null;
     this.roundIndex = 0;
     this.roundWins = { p1: 0, p2: 0 };
-    this.inputLocked = true;
+    this.myTurn = false;
     this.roundOver = true;
     this.matchOver = false;
     this.rounds = [];
     this.phase = 'idle';
     gameEvents.clearReplay();
     gameEvents.typedEmit('match:reset', {});
+  }
+
+  private opponentOf(tag: PlayerTag): PlayerTag {
+    return tag === 'p1' ? 'p2' : 'p1';
+  }
+
+  private outcomeFor(winner: PlayerTag | null): Outcome {
+    if (winner === null) return 'draw';
+    return winner === (this.you ?? 'p1') ? 'win' : 'lose';
   }
 
   private registerNetworkHandlers(): void {
@@ -177,47 +205,39 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
-    this.net.on('round:start', ({ roundIndex, board, attemptTimeoutMs, serverStartAt }) => {
+    this.net.on('round:start', ({ roundIndex, board, first, startsInMs }) => {
       this.roundIndex = roundIndex;
-      this.beginRound(board, attemptTimeoutMs, serverStartAt);
+      this.beginRound(board, first, startsInMs);
     });
 
-    this.net.on('attempt:result', ({ arrowId, correct, remaining, lockedUntil, finished }) => {
+    this.net.on('turn:start', ({ player, durationMs }) => {
+      this.myTurn = player === this.you;
+      gameEvents.typedEmit('turn:start', { yours: this.myTurn, startedAt: performance.now(), durationMs });
+    });
+
+    this.net.on('attempt:result', ({ player, arrowId, correct, scores, remaining }) => {
+      const you = this.you ?? 'p1';
+      const mine = player === you;
       if (correct) {
-        this.removeTile(arrowId);
-        gameEvents.typedEmit('attempt:correct', { remaining, total: this.totalArrows });
-        if (finished) {
-          this.roundOver = true;
-          this.inputLocked = true;
-        } else {
-          gameEvents.typedEmit('window:start', { windowStart: performance.now(), timeoutMs: this.attemptTimeoutMs });
-        }
-        return;
+        this.removeArrow(arrowId, mine ? RENDER.COLORS.you : RENDER.COLORS.opponent);
+      } else {
+        this.flashBlocked(arrowId);
+        // The server hands the turn over in the same tick; stop accepting taps until it says so.
+        if (mine) this.myTurn = false;
       }
-
-      this.flashWrong(arrowId);
-      this.inputLocked = true;
-      const delay = Math.max(0, (lockedUntil ?? Date.now()) - Date.now());
-      gameEvents.typedEmit('attempt:wrong', { lockedUntil: performance.now() + delay });
-      this.time.delayedCall(delay, () => {
-        this.inputLocked = false;
-        gameEvents.typedEmit('window:start', { windowStart: performance.now(), timeoutMs: this.attemptTimeoutMs });
-      });
+      this.showPointPopup(arrowId, correct, mine);
+      gameEvents.typedEmit('score:update', { you: scores[you], opponent: scores[this.opponentOf(you)], remaining });
     });
 
-    this.net.on('opponent:progress', (payload) => gameEvents.typedEmit('opponent:progress', payload));
-
-    this.net.on('round:finished', ({ winner, roundWins, times, remaining }) => {
+    this.net.on('round:finished', ({ winner, scores, roundWins }) => {
       this.roundOver = true;
-      this.inputLocked = true;
+      this.myTurn = false;
       this.roundWins = roundWins;
       const you = this.you ?? 'p1';
-      const opponent: PlayerTag = you === 'p1' ? 'p2' : 'p1';
       const record: RoundRecord = {
-        youWon: winner === you,
-        yourTimeMs: times[you],
-        yourRemaining: remaining[you],
-        opponentRemaining: remaining[opponent],
+        result: this.outcomeFor(winner),
+        yourScore: scores[you],
+        opponentScore: scores[this.opponentOf(you)],
       };
       this.rounds.push(record);
       gameEvents.typedEmit('round:finished', { ...record, roundWins });
@@ -230,83 +250,115 @@ export class GameScene extends Phaser.Scene {
     this.net.on('match:finished', ({ winner, roundWins }) => {
       this.matchOver = true;
       this.roundOver = true;
-      this.inputLocked = true;
+      this.myTurn = false;
       this.phase = 'result';
-      const youWon = winner === this.you;
-      gameEvents.typedEmit('match:finished', { youWon, roundWins });
-      this.lobby.showResult({ youWon, roundWins, rounds: this.rounds });
+      const result = this.outcomeFor(winner);
+      gameEvents.typedEmit('match:finished', { result, roundWins });
+      this.lobby.showResult({ result, roundWins, rounds: this.rounds });
     });
   }
 
-  private beginRound(board: BoardDTO, attemptTimeoutMs: number, serverStartAt: number): void {
-    this.clearTiles();
-    this.attemptTimeoutMs = attemptTimeoutMs;
+  private beginRound(board: BoardDTO, first: PlayerTag, startsInMs: number): void {
+    this.clearArrows();
     this.board = board;
-    this.totalArrows = board.arrows.length;
     this.roundOver = false;
-    this.inputLocked = true;
+    this.myTurn = false;
 
-    const tileSize = getTileSize();
-    for (const arrow of board.arrows) {
-      const { x, y } = cellToPosition(arrow.row, arrow.col);
-      const bg = this.add.image(x, y, 'tile-bg').setDisplaySize(tileSize, tileSize).setInteractive({ useHandCursor: true });
-      const arrowSprite = this.add
-        .image(x, y, 'arrow-tri')
-        .setDisplaySize(tileSize * 0.6, tileSize * 0.6)
-        .setAngle(DIRECTION_ANGLE[arrow.dir]);
+    board.arrows.forEach((arrow, index) => this.addArrow(arrow, RENDER.ARROW_PALETTE[index % RENDER.ARROW_PALETTE.length]!));
 
-      bg.on('pointerup', () => this.handleClick(arrow.id));
-      this.tiles.set(arrow.id, { bg, arrow: arrowSprite });
-    }
-
-    gameEvents.typedEmit('round:preview', { total: this.totalArrows, roundIndex: this.roundIndex, roundWins: this.roundWins });
-    gameEvents.typedEmit('net:round-countdown', { serverStartAt });
-
-    const delay = Math.max(0, serverStartAt - Date.now());
-    this.time.delayedCall(delay, () => {
-      this.inputLocked = false;
-      const startedAt = performance.now();
-      gameEvents.typedEmit('round:start', { startedAt });
-      gameEvents.typedEmit('window:start', { windowStart: startedAt, timeoutMs: this.attemptTimeoutMs });
+    gameEvents.typedEmit('round:preview', {
+      total: board.arrows.length,
+      roundIndex: this.roundIndex,
+      roundWins: this.roundWins,
+      youFirst: first === this.you,
     });
+    gameEvents.typedEmit('score:update', { you: 0, opponent: 0, remaining: board.arrows.length });
+    gameEvents.typedEmit('round:countdown', { startsAt: performance.now() + startsInMs });
+  }
+
+  private addArrow(arrow: ArrowDTO, color: number): void {
+    const graphics = this.add.graphics().setMask(this.gridMask);
+    drawSnake(graphics, bodyPoints(arrow), color);
+
+    const size = getCellSize();
+    const zones = arrow.cells.map((cell) => {
+      const { x, y } = cellToPosition(cell.row, cell.col);
+      const zone = this.add.zone(x, y, size, size).setInteractive({ useHandCursor: true });
+      zone.on('pointerup', () => this.handleClick(arrow.id));
+      return zone;
+    });
+    this.arrows.set(arrow.id, { arrow, color, graphics, zones });
   }
 
   private handleClick(arrowId: string): void {
-    if (this.roundOver || this.inputLocked || !this.matchId) return;
+    if (this.roundOver || !this.myTurn || !this.matchId) return;
     this.net.sendAttempt(this.matchId, this.roundIndex, arrowId);
   }
 
-  private clearTiles(): void {
-    for (const sprites of this.tiles.values()) {
-      sprites.bg.destroy();
-      sprites.arrow.destroy();
+  private clearArrows(): void {
+    for (const view of this.arrows.values()) {
+      view.graphics.destroy();
+      for (const zone of view.zones) zone.destroy();
     }
-    this.tiles.clear();
+    this.arrows.clear();
   }
 
-  private flashWrong(arrowId: string): void {
-    const sprites = this.tiles.get(arrowId);
-    if (!sprites) return;
-    this.tweens.add({ targets: sprites.bg, duration: RENDER.TWEEN_MS, yoyo: true, repeat: 1, alpha: 0.4 });
-    sprites.bg.setTint(RENDER.COLORS.wrongFlash);
-    this.time.delayedCall(RENDER.TWEEN_MS * 2, () => sprites.bg.clearTint());
-  }
-
-  private removeTile(arrowId: string): void {
-    const sprites = this.tiles.get(arrowId);
-    if (!sprites) return;
-    this.tiles.delete(arrowId);
-
-    sprites.bg.setTint(RENDER.COLORS.correctFlash);
-    this.tweens.add({
-      targets: [sprites.bg, sprites.arrow],
-      duration: RENDER.TWEEN_MS,
-      scale: 0,
-      alpha: 0,
-      onComplete: () => {
-        sprites.bg.destroy();
-        sprites.arrow.destroy();
+  /** A tapped-and-blocked arrow shakes and flashes red — on both screens, whoever tapped. */
+  private flashBlocked(arrowId: string): void {
+    const view = this.arrows.get(arrowId);
+    if (!view) return;
+    const { graphics, arrow, color } = view;
+    const points = bodyPoints(arrow);
+    let step = 0;
+    this.time.addEvent({
+      delay: RENDER.FLASH_MS,
+      repeat: 5,
+      callback: () => {
+        step++;
+        const red = step % 2 === 1;
+        drawSnake(graphics, points, red ? RENDER.COLORS.blockedFlash : color);
+        graphics.x = red ? (step % 4 === 1 ? -5 : 5) : 0;
       },
     });
+  }
+
+  /** The arrow leaves the shared board by sliding out along its heading, tinted by who took it. */
+  private removeArrow(arrowId: string, color: number): void {
+    const view = this.arrows.get(arrowId);
+    if (!view) return;
+    this.arrows.delete(arrowId);
+    for (const zone of view.zones) zone.destroy();
+
+    const { points, bodyLength, travel } = slidePath(view.arrow);
+    const size = getCellSize();
+    const state = { distance: 0 };
+    this.tweens.add({
+      targets: state,
+      distance: travel,
+      duration: (travel / (size * RENDER.SLIDE_CELLS_PER_SEC)) * 1000,
+      ease: 'Quad.easeIn',
+      onUpdate: () => drawSnake(view.graphics, subPath(points, state.distance, state.distance + bodyLength), color),
+      onComplete: () => view.graphics.destroy(),
+    });
+  }
+
+  /** Floating "+1" / "-1" at the arrow's head, in the colour of whoever tapped. */
+  private showPointPopup(arrowId: string, correct: boolean, mine: boolean): void {
+    const arrow = this.board?.arrows.find((a) => a.id === arrowId);
+    if (!arrow) return;
+    const head = headOf(arrow);
+    const { x, y } = cellToPosition(head.row, head.col);
+    const color = correct ? (mine ? RENDER.COLORS.you : RENDER.COLORS.opponent) : RENDER.COLORS.blockedFlash;
+    const text = this.add
+      .text(x, y, correct ? '+1' : '-1', {
+        fontSize: '30px',
+        fontStyle: 'bold',
+        color: `#${color.toString(16).padStart(6, '0')}`,
+        stroke: '#12121c',
+        strokeThickness: 5,
+      })
+      .setOrigin(0.5)
+      .setDepth(5);
+    this.tweens.add({ targets: text, y: y - 46, alpha: 0, duration: 800, onComplete: () => text.destroy() });
   }
 }
