@@ -2,8 +2,12 @@ import Phaser from 'phaser';
 import { RENDER, getBoardSize, getCellSize, getGridLeft, getGridTop } from '../game/config.js';
 import { gameEvents, type GameEventMap } from '../net/events.js';
 import { formatClock, outcomeLabel } from '../game/summary.js';
+import { audio } from '../audio/engine.js';
 
 const css = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
+
+/** With this much time left in a solo run the music turns tense. */
+const TENSE_MUSIC_MS = 10_000;
 
 /** Score, whose turn it is, the turn clock and the pre-round countdown. */
 export class UIScene extends Phaser.Scene {
@@ -184,6 +188,7 @@ export class UIScene extends Phaser.Scene {
     this.hideCountdown();
     this.turn = null;
     this.solo = null;
+    audio.setMood('cheerful');
     this.roundIndicatorText.setText('');
     this.youScoreText.setText('');
     this.opponentScoreText.setText('');
@@ -249,6 +254,7 @@ export class UIScene extends Phaser.Scene {
       this.solo.over = true;
       this.solo.frozenMs = payload.timeLeftMs;
     }
+    audio.setMood('cheerful');
     this.hideCountdown();
     this.turnBanner.setText(payload.outcome === 'cleared' ? '레벨 클리어!' : '시간 초과');
   };
@@ -330,6 +336,8 @@ export class UIScene extends Phaser.Scene {
   /** The solo clock: a ring that empties over the whole time limit, with m:ss inside. */
   private drawSoloClock(solo: { timeLimitMs: number; deadline: number; over: boolean; frozenMs: number }): void {
     const remainingMs = solo.over ? solo.frozenMs : Math.max(0, solo.deadline - performance.now());
+    // The last ten seconds of a run switch the music to the tense tune (and back once it is over).
+    audio.setMood(!solo.over && remainingMs > 0 && remainingMs <= TENSE_MUSIC_MS ? 'tense' : 'cheerful');
     const fraction = Phaser.Math.Clamp(remainingMs / solo.timeLimitMs, 0, 1);
     const urgent = remainingMs <= 30_000;
     const color = urgent ? RENDER.COLORS.countdownWarn : RENDER.COLORS.you;

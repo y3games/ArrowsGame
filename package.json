@@ -11,7 +11,7 @@
     "dev:client": "npm run dev -w @arrows/client",
     "dev:server": "npm run dev -w @arrows/server",
     "build": "npm run build -w @arrows/client && npm run build -w @arrows/server",
-    "test": "npm run test -w @arrows/shared",
+    "test": "npm run test -w @arrows/shared && npm run test -w @arrows/client",
     "lint": "npm run lint -w @arrows/shared && npm run lint -w @arrows/client && npm run lint -w @arrows/server",
     "typecheck": "npm run typecheck -w @arrows/shared && npm run typecheck -w @arrows/client && npm run typecheck -w @arrows/server",
     "check": "npm run typecheck && npm run lint && npm run test"

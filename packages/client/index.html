@@ -153,6 +153,23 @@
         font-weight: 700;
         font-variant-numeric: tabular-nums;
       }
+      #sound-toggle {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        z-index: 20;
+        font: inherit;
+        font-size: 14px;
+        padding: 8px 12px;
+        border-radius: 10px;
+        border: none;
+        background: #2b2f4a;
+        color: #e8eaf6;
+        cursor: pointer;
+      }
+      #sound-toggle.off {
+        color: #868e96;
+      }
       #game-exit {
         position: fixed;
         top: 10px;
@@ -218,6 +235,7 @@
   <body>
     <div id="app"></div>
     <button id="game-exit" type="button" hidden>나가기</button>
+    <button id="sound-toggle" type="button" aria-pressed="true">♪ 소리 켜짐</button>
     <div id="lobby" hidden>
       <section id="lobby-idle" class="panel">
         <h1>화살표 탈출 미로</h1>

@@ -16,7 +16,7 @@ npm-workspaces monorepo:
 
 - `npm run dev:client` — Vite dev server on :5173
 - `npm run dev:server` — Socket.IO server on :4000 (via `tsx watch`)
-- `npm run test` — vitest for `packages/shared`
+- `npm run test` — vitest for `packages/shared` and `packages/client` (the client tests cover the music score data)
 - `npm run typecheck` / `npm run lint` — across all packages
 - `npm run check` — typecheck + lint + test
 - `npm run build` — client (`vite build`) + server (`esbuild` bundle to `dist/index.js`)
@@ -71,6 +71,13 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
   to play lives only in the browser (`src/services/soloProgress.ts`, localStorage); the server just
   coerces whatever level it is asked for. The board size therefore varies per game — the client lays
   it out from `setBoardSize()`/`getCellSize()` in `game/config.ts`, never from a fixed grid constant.
+- **All audio is synthesized in the browser, no files** (`packages/client/src/audio/`): `score.ts` is
+  the music as MIDI-style note data (pure, tested), `synth.ts` the instruments and the effects (they
+  take a `BaseAudioContext`, so the same code renders offline for checks), `engine.ts` the sequencer.
+  Browsers block sound until the first click/key, so `AudioEngine.attach()` waits for a gesture and
+  `setMood()` before that only remembers the choice. Two tunes: `cheerful` loops forever, `tense`
+  replaces it while a solo run has ≤ 10 s left (`UIScene` drives it every frame; multiplayer never
+  goes tense). The ♪ button (top right, above the lobby overlay) mutes and is remembered.
 - **Every arrow has at least 2 cells** (`MIN_ARROW_LENGTH`). `generateBoard` has a `centerPull` option
   because reverse construction otherwise leaves the middle of big maps empty.
 - **Players meet in rooms, not a random queue.** The lobby lists open rooms (`rooms:list`, `n/2`);

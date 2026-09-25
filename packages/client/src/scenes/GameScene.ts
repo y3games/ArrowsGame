@@ -9,6 +9,7 @@ import type { Outcome, RoundRecord, SoloSummary } from '../game/summary.js';
 import { createLobby, type Lobby } from '../ui/lobby.js';
 import type { UIScene } from './UIScene.js';
 import { loadSoloLevel, saveSoloLevel } from '../services/soloProgress.js';
+import { audio } from '../audio/engine.js';
 
 /** One arrow on the shared board: its drawing plus the invisible tap targets over its cells. */
 interface ArrowView {
@@ -38,6 +39,8 @@ interface ArrowsDebugHook {
   startSolo: (level?: number) => void;
   /** The board's remaining arrows and the solo game id, for driving a solo run in tests. */
   getSoloId: () => string | null;
+  /** What the audio engine is doing (context state, which tune, mute, effects played). */
+  getAudio: () => ReturnType<typeof audio.debugState>;
 }
 declare global {
   interface Window {
@@ -129,6 +132,7 @@ export class GameScene extends Phaser.Scene {
         voteRematch: () => this.net.voteRematch(),
         startSolo: (level) => this.net.startSolo(level ?? loadSoloLevel()),
         getSoloId: () => this.soloId,
+        getAudio: () => audio.debugState(),
       };
     }
   }
@@ -278,6 +282,7 @@ export class GameScene extends Phaser.Scene {
     this.net.on('solo:result', ({ arrowId, correct, remaining, mistakes, timeLeftMs }) => {
       if (correct) this.removeArrow(arrowId, RENDER.COLORS.you);
       else this.flashBlocked(arrowId);
+      audio.playSfx(correct ? 'remove' : 'blocked');
       gameEvents.typedEmit('solo:update', {
         deadline: performance.now() + timeLeftMs,
         mistakes,
@@ -320,6 +325,8 @@ export class GameScene extends Phaser.Scene {
         if (mine) this.myTurn = false;
       }
       this.showPointPopup(arrowId, correct, mine);
+      // Both players hear every tap; the opponent's removals are lower and quieter.
+      audio.playSfx(correct ? 'remove' : 'blocked', mine);
       gameEvents.typedEmit('score:update', { you: scores[you], opponent: scores[this.opponentOf(you)], remaining });
     });
 
