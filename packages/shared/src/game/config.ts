@@ -32,8 +32,11 @@ export const WIN_ROUNDS_NEEDED = Math.ceil(GAMEPLAY.BEST_OF / 2);
 export const SOLO = {
   TIME_LIMIT_MS: 180_000,
   PENALTY_MS: 10_000,
+  /** Level 1 is played on a map of this many rows and columns; each level adds `SIZE_STEP` until the full size. */
+  START_SIZE: 24,
+  SIZE_STEP: 2,
   /** The board reaches its full size (GRID_ROWS x GRID_COLS) at this level; later levels only get more tangled. */
-  FULL_SIZE_LEVEL: 11,
+  FULL_SIZE_LEVEL: 4,
   /** Levels above this are refused — a sanity bound on what a client may ask for, not a designed ceiling. */
   MAX_LEVEL: 999,
 } as const;

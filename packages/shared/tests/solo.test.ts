@@ -106,7 +106,8 @@ describe('solo level curve', () => {
 
   it('starts small and easy, and reaches the full map at the full-size level', () => {
     const first = soloLevelConfig(1);
-    expect([first.rows, first.cols]).toEqual([10, 10]);
+    expect([first.rows, first.cols]).toEqual([SOLO.START_SIZE, SOLO.START_SIZE]);
+    expect(SOLO.START_SIZE).toBe(24);
     expect(first.minLength).toBe(2);
     const full = soloLevelConfig(SOLO.FULL_SIZE_LEVEL);
     expect([full.rows, full.cols]).toEqual([GAMEPLAY.GRID_ROWS, GAMEPLAY.GRID_COLS]);
@@ -171,13 +172,19 @@ describe('solo level curve', () => {
     }
   });
 
-  it('puts more arrows on the board as the map grows', () => {
+  it('puts more arrows on the board as the levels go up', () => {
     const count = (level: number): number => {
       let total = 0;
-      for (let i = 0; i < 4; i++) total += generateBoard(soloLevelConfig(level)).arrows.length;
-      return total / 4;
+      for (let i = 0; i < 6; i++) total += generateBoard(soloLevelConfig(level)).arrows.length;
+      return total / 6;
     };
-    expect(count(6)).toBeGreaterThan(count(1));
-    expect(count(SOLO.FULL_SIZE_LEVEL)).toBeGreaterThan(count(6));
+    expect(count(SOLO.FULL_SIZE_LEVEL)).toBeGreaterThan(count(1) + 15);
+    expect(count(10)).toBeGreaterThan(count(SOLO.FULL_SIZE_LEVEL) + 10);
+  });
+
+  it('starts sparse enough to be a friendly first level', () => {
+    const arrows = generateBoard(soloLevelConfig(1)).arrows.length;
+    expect(arrows).toBeGreaterThan(30);
+    expect(arrows).toBeLessThan(65);
   });
 });

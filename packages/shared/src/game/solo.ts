@@ -81,21 +81,23 @@ export function clampSoloLevel(level: unknown): number {
 /**
  * The difficulty curve. Every knob only ever moves in the harder direction, and they keep moving
  * until about level 20, so there is always a next step:
- *  - the map grows two rows and columns per level up to the full size (level 11);
- *  - arrows get more numerous (the middle of the map is filled more — `centerPull`), longer and
- *    more winding (lower `straightBias`), and more interlocked (longer chains of "this one must go
- *    before that one"). About 16 arrows on level 1, about 60 at full size, 100+ by level 17.
+ *  - the map starts at 24x24 and grows two rows and columns per level up to the full size (level 4);
+ *  - arrows get more numerous (a higher coverage target, and the middle of the map filled more —
+ *    `centerPull`), longer and more winding (lower `straightBias`), and more interlocked (longer
+ *    chains of "this one must go before that one"). About 45 arrows on level 1, about 100 by level 9.
  */
 export function soloLevelConfig(levelInput: number): SoloLevelConfig {
   const level = clampSoloLevel(levelInput);
-  const size = (max: number): number => Math.min(max, 10 + 2 * (level - 1));
+  const size = (max: number): number => Math.min(max, SOLO.START_SIZE + SOLO.SIZE_STEP * (level - 1));
   return {
     level,
     rows: size(GAMEPLAY.GRID_ROWS),
     cols: size(GAMEPLAY.GRID_COLS),
     minLength: Math.min(5, 2 + Math.floor((level - 1) / 4)),
     maxLength: Math.min(24, 6 + level),
-    fill: Math.min(0.95, 0.7 + 0.01 * level),
+    // Coverage the layout aims for. Early levels stop well short of what a map can hold, so level 1
+    // is sparse; from about level 9 the target is above what can be reached, i.e. "as full as it gets".
+    fill: Math.min(0.95, 0.3 + 0.05 * level),
     straightBias: Math.max(0.1, 0.5 - 0.02 * level),
     interlock: Math.min(14, 2 + level),
     centerPull: Math.min(10, 2 + Math.floor((level - 1) / 2)),

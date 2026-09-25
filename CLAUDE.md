@@ -66,8 +66,8 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
   blocked tap costs `SOLO.PENALTY_MS` (10 s) off the time left, the server timer ends the run. A
   socket is in a room *or* in solo play, never both (`socketHandlers.ts` guards both directions);
   while soloing it leaves the `lobby` Socket.IO room and re-enters via `RoomManager.onConnect()`.
-  Solo is level-based: `solo:start {level}` → `soloLevelConfig(level)` (map 10×10 growing to the full
-  30×30 at level 11, then ever more/longer/more tangled arrows until about level 20). The next level
+  Solo is level-based: `solo:start {level}` → `soloLevelConfig(level)` (map 24×24 growing to the full
+  30×30 at level 4, then ever more/longer/more tangled arrows until about level 20). The next level
   to play lives only in the browser (`src/services/soloProgress.ts`, localStorage); the server just
   coerces whatever level it is asked for. The board size therefore varies per game — the client lays
   it out from `setBoardSize()`/`getCellSize()` in `game/config.ts`, never from a fixed grid constant.
