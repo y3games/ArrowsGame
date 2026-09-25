@@ -5,4 +5,5 @@
 - [02-architecture](02-architecture/) — 설계 문서, ADR
 - [03-notes](03-notes/) — 작업 메모
   - [2026-09-25 로비·재대결·결과 화면·배포 설정](03-notes/2026-09-25-m4-polish-deploy.md)
+  - [2026-09-25 방 만들기·입장·다시 하기 투표](03-notes/2026-09-25-rooms.md)
 - [04-references](04-references/) — 참고 자료

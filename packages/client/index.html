@@ -93,8 +93,58 @@
         color: #ff8787;
         font-size: 14px;
       }
-      #lobby #lobby-status {
+      #lobby #lobby-status,
+      #lobby .hint {
         font-size: 14px;
+      }
+      #lobby .notice {
+        color: #ffd43b;
+        font-size: 14px;
+      }
+      #lobby h2 {
+        margin: 6px 0 0;
+        font-size: 16px;
+        color: #a5adce;
+        text-align: left;
+      }
+      #room-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 40vh;
+        overflow-y: auto;
+      }
+      #room-list li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 8px 8px 14px;
+        border-radius: 10px;
+        background: #1c1d2e;
+      }
+      #room-list .room-title {
+        flex: 1;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #room-list .room-count {
+        font-variant-numeric: tabular-nums;
+        color: #a5adce;
+      }
+      #room-list button {
+        font-size: 15px;
+        padding: 8px 12px;
+        min-width: 72px;
+      }
+      #room-count {
+        font-size: 32px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
       }
       #result-score {
         font-size: 32px;
@@ -131,21 +181,28 @@
         <form id="lobby-form" class="panel" autocomplete="off">
           <input id="lobby-name" type="text" placeholder="닉네임" aria-label="닉네임" />
           <div id="lobby-error" class="error" role="alert" hidden></div>
-          <button id="lobby-start" type="submit">대전 시작</button>
+          <div id="lobby-notice" class="notice" role="status" hidden></div>
+          <button id="lobby-create" type="submit">방 만들기</button>
         </form>
+        <h2>열린 방</h2>
+        <ul id="room-list" aria-label="열린 방 목록"></ul>
+        <p id="room-empty" class="hint">열린 방이 없습니다. 방을 만들어 보세요.</p>
         <p id="lobby-status" role="status"></p>
       </section>
-      <section id="lobby-searching" class="panel" hidden>
-        <h1>상대를 찾는 중…</h1>
-        <button id="lobby-cancel" type="button" class="secondary">취소</button>
+      <section id="lobby-room" class="panel" hidden>
+        <h1 id="room-title"></h1>
+        <div id="room-count"></div>
+        <p id="room-hint">상대를 기다리는 중…</p>
+        <button id="room-leave" type="button" class="secondary">나가기</button>
       </section>
       <section id="lobby-result" class="panel" hidden>
         <h1 id="result-title"></h1>
         <div id="result-score"></div>
         <ol id="result-rounds"></ol>
         <p id="result-note" hidden></p>
-        <button id="result-rematch" type="button">다시 하기</button>
-        <button id="result-lobby" type="button" class="secondary">로비로</button>
+        <p id="result-countdown" class="hint" role="status" hidden></p>
+        <button id="result-rematch" type="button" hidden>다시 하기</button>
+        <button id="result-leave" type="button" class="secondary">나가기</button>
       </section>
       <section id="lobby-disconnected" class="panel" hidden>
         <h1>서버 연결이 끊어졌습니다</h1>

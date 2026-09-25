@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { findEscapableArrows, type BoardDTO, type Direction, type PlayerTag } from '@arrows/shared';
+import { findEscapableArrows, type BoardDTO, type Direction, type PlayerTag, type RoomSummary } from '@arrows/shared';
 import { RENDER, cellToPosition, getTileSize } from '../game/config.js';
 import { gameEvents } from '../net/events.js';
 import { SocketIONetworkClient } from '../net/SocketIONetworkClient.js';
@@ -20,8 +20,13 @@ interface ArrowsDebugHook {
   getEscapable: () => string[];
   getYou: () => PlayerTag | null;
   getMatchId: () => string | null;
-  /** Skips the lobby form: enters the queue directly under `name`. */
-  joinQueue: (name: string) => void;
+  /** The lobby's list of open rooms, as last sent by the server. */
+  getRooms: () => RoomSummary[];
+  /** These skip the lobby form and act directly under `name`. */
+  createRoom: (name: string) => void;
+  joinRoom: (roomId: string, name: string) => void;
+  leaveRoom: () => void;
+  voteRematch: () => void;
 }
 declare global {
   interface Window {
@@ -39,9 +44,8 @@ export class GameScene extends Phaser.Scene {
   private net!: NetworkClient;
   private lobby!: Lobby;
   /** Which screen the player is on; decides how a dropped connection is handled. */
-  private phase: 'idle' | 'searching' | 'match' | 'result' | 'disconnected' = 'idle';
-  private nickname = '';
-  private opponentLeft = false;
+  private phase: 'idle' | 'room' | 'match' | 'result' | 'disconnected' = 'idle';
+  private openRooms: RoomSummary[] = [];
   private rounds: RoundRecord[] = [];
   private tiles = new Map<string, TileSprites>();
   private board: BoardDTO | null = null;
@@ -64,16 +68,11 @@ export class GameScene extends Phaser.Scene {
     this.tiles.clear();
 
     this.lobby = createLobby({
-      onStart: (nickname) => this.startSearch(nickname),
-      onCancel: () => {
-        this.net.leaveQueue();
-        this.phase = 'idle';
-        this.lobby.show('idle');
-      },
-      onRematch: () => {
-        this.resetMatch();
-        this.startSearch(this.nickname);
-      },
+      onCreateRoom: (nickname) => this.net.createRoom(nickname),
+      onJoinRoom: (roomId, nickname) => this.net.joinRoom(roomId, nickname),
+      // The server answers with `room:left`, which is what actually returns us to the lobby.
+      onLeaveRoom: () => this.net.leaveRoom(),
+      onRematch: () => this.net.voteRematch(),
       onToLobby: () => {
         this.resetMatch();
         this.lobby.show('idle');
@@ -91,7 +90,11 @@ export class GameScene extends Phaser.Scene {
         getEscapable: () => (this.board ? findEscapableArrows(this.board, new Set(this.tiles.keys())).map((a) => a.id) : []),
         getYou: () => this.you,
         getMatchId: () => this.matchId,
-        joinQueue: (name) => this.startSearch(name),
+        getRooms: () => this.openRooms,
+        createRoom: (name) => this.net.createRoom(name),
+        joinRoom: (roomId, name) => this.net.joinRoom(roomId, name),
+        leaveRoom: () => this.net.leaveRoom(),
+        voteRematch: () => this.net.voteRematch(),
       };
     }
   }
@@ -100,13 +103,6 @@ export class GameScene extends Phaser.Scene {
     const sprites = this.tiles.get(id);
     if (!sprites) return null;
     return { id, x: sprites.bg.x, y: sprites.bg.y };
-  }
-
-  private startSearch(nickname: string): void {
-    this.nickname = nickname;
-    this.phase = 'searching';
-    this.lobby.show('searching');
-    this.net.joinQueue(nickname);
   }
 
   /**
@@ -126,7 +122,6 @@ export class GameScene extends Phaser.Scene {
     this.inputLocked = true;
     this.roundOver = true;
     this.matchOver = false;
-    this.opponentLeft = false;
     this.rounds = [];
     this.phase = 'idle';
     gameEvents.clearReplay();
@@ -136,16 +131,42 @@ export class GameScene extends Phaser.Scene {
   private registerNetworkHandlers(): void {
     this.net.onConnectionChange((state) => {
       this.lobby.setConnection(state);
-      // The server already scored an interrupted match as a loss and forgot our queue spot,
+      // The server already scored an interrupted match as a loss and dropped us from our room,
       // so there is nothing to resume — tell the player and let them go back to the lobby.
-      if (state === 'disconnected' && (this.phase === 'searching' || this.phase === 'match')) {
+      if (state === 'disconnected' && this.phase !== 'idle' && this.phase !== 'disconnected') {
         this.resetMatch();
         this.phase = 'disconnected';
         this.lobby.show('disconnected');
       }
     });
 
+    this.net.on('rooms:list', (rooms) => {
+      this.openRooms = rooms;
+      this.lobby.setRooms(rooms);
+    });
+
+    this.net.on('room:joined', (snapshot) => {
+      this.phase = 'room';
+      this.lobby.setRoom(snapshot);
+      this.lobby.show('room');
+    });
+
+    this.net.on('room:updated', (snapshot) => this.lobby.setRoom(snapshot));
+
+    this.net.on('room:left', ({ reason }) => {
+      this.resetMatch();
+      this.lobby.show('idle');
+      if (reason === 'timeout') this.lobby.showNotice('10초 안에 다시 하기를 누르지 않아 방에서 나왔습니다.');
+    });
+
+    this.net.on('room:error', ({ code }) => this.lobby.showError(code));
+
+    this.net.on('rematch:open', ({ timeoutMs }) => this.lobby.openRematch(timeoutMs));
+    this.net.on('rematch:status', (status) => this.lobby.setRematchStatus(status));
+
     this.net.on('match:found', ({ matchId, opponentNickname, you }) => {
+      // A rematch starts in the same room, straight from the previous match's result screen.
+      this.resetMatch();
       this.phase = 'match';
       this.lobby.show('hidden');
       this.matchId = matchId;
@@ -213,11 +234,7 @@ export class GameScene extends Phaser.Scene {
       this.phase = 'result';
       const youWon = winner === this.you;
       gameEvents.typedEmit('match:finished', { youWon, roundWins });
-      this.lobby.showResult({ youWon, roundWins, rounds: this.rounds, opponentLeft: this.opponentLeft });
-    });
-
-    this.net.on('opponent:disconnected', () => {
-      this.opponentLeft = true;
+      this.lobby.showResult({ youWon, roundWins, rounds: this.rounds });
     });
   }
 

@@ -52,10 +52,6 @@ export class Match {
     ];
   }
 
-  get sockets(): Socket[] {
-    return [this.players[0].socket, this.players[1].socket];
-  }
-
   announceMatchFound(): void {
     for (const i of [0, 1] as const) {
       const player = this.players[i];

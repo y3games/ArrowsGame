@@ -38,12 +38,20 @@ export class SocketIONetworkClient implements NetworkClient {
     if (this.state !== null) handler(this.state);
   }
 
-  leaveQueue(): void {
-    this.socket.emit('queue:leave');
+  createRoom(nickname: string): void {
+    this.socket.emit('room:create', { nickname });
   }
 
-  joinQueue(nickname: string): void {
-    this.socket.emit('queue:join', { nickname });
+  joinRoom(roomId: string, nickname: string): void {
+    this.socket.emit('room:join', { roomId, nickname });
+  }
+
+  leaveRoom(): void {
+    this.socket.emit('room:leave');
+  }
+
+  voteRematch(): void {
+    this.socket.emit('rematch:vote');
   }
 
   sendReady(matchId: string, roundIndex: number): void {

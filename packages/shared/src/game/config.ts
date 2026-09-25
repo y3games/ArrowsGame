@@ -14,3 +14,9 @@ export const GAMEPLAY = {
 } as const;
 
 export const WIN_ROUNDS_NEEDED = Math.ceil(GAMEPLAY.BEST_OF / 2);
+
+export const ROOM = {
+  CAPACITY: 2,
+  /** After a match ends, a player who has not asked for a rematch within this window is removed from the room. */
+  REMATCH_WINDOW_MS: 10_000,
+} as const;

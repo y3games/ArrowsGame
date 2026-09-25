@@ -15,15 +15,45 @@ export interface BoardDTO {
 
 export type PlayerTag = 'p1' | 'p2';
 
+export interface RoomSummary {
+  id: string;
+  title: string;
+  players: number;
+  capacity: number;
+  /** True once a match is running (or its result screen is up) — the room cannot be entered. */
+  playing: boolean;
+}
+
+export interface RoomSnapshot {
+  room: RoomSummary;
+  /** Nicknames of everyone seated, host first. */
+  players: string[];
+}
+
+export type RoomErrorCode = 'full' | 'not_found' | 'already_in_room';
+
 export interface ClientToServerEvents {
-  'queue:join': (payload: { nickname?: string }) => void;
-  'queue:leave': () => void;
+  'room:create': (payload: { nickname?: string }) => void;
+  'room:join': (payload: { roomId: string; nickname?: string }) => void;
+  'room:leave': () => void;
+  'rematch:vote': () => void;
   'round:ready': (payload: { matchId: string; roundIndex: number }) => void;
   'attempt:click': (payload: { matchId: string; roundIndex: number; arrowId: string }) => void;
 }
 
 export interface ServerToClientEvents {
-  'queue:waiting': () => void;
+  /** Open rooms; sent only to sockets that are not in a room, whenever the list changes. */
+  'rooms:list': (rooms: RoomSummary[]) => void;
+  /** To the socket that just entered a room (created or joined). */
+  'room:joined': (payload: RoomSnapshot) => void;
+  /** To everyone in a room whenever its seating changes. */
+  'room:updated': (payload: RoomSnapshot) => void;
+  /** To a socket that is no longer in its room: it asked to leave, or sat out the rematch window. */
+  'room:left': (payload: { reason: 'leave' | 'timeout' }) => void;
+  'room:error': (payload: { code: RoomErrorCode }) => void;
+  /** The match just ended: both players have `timeoutMs` to vote for a rematch or be removed. */
+  'rematch:open': (payload: { timeoutMs: number }) => void;
+  'rematch:status': (payload: { youVoted: boolean; opponentVoted: boolean }) => void;
   'match:found': (payload: { matchId: string; opponentNickname: string; you: PlayerTag }) => void;
   'round:start': (payload: {
     roundIndex: number;

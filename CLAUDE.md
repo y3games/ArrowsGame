@@ -55,16 +55,25 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
   it's dead code.
 - **The lobby/result/disconnect screens are HTML in `packages/client/index.html`** (wired by
   `src/ui/lobby.ts`), not Phaser objects — a canvas can't host a text field and Korean IME needs a
-  real `<input>`. `GameScene` owns the flow (`startSearch` / `resetMatch`); the scene is never
-  restarted between matches. "다시 하기" re-enters the queue (new random opponent), not a rematch
-  with the same one.
+  real `<input>`. `GameScene` owns the flow (`resetMatch` and the room/match phases); the scene is
+  never restarted between matches.
+- **Players meet in rooms, not a random queue.** The lobby lists open rooms (`rooms:list`, `n/2`);
+  a room seats 2, and the match starts automatically when the second player joins. Seating/vote rules are the
+  pure functions in `packages/shared/src/game/room.ts`; `packages/server/src/rooms.ts`
+  (`RoomManager`) adds sockets, the rematch timer and the running `Match`. After a match both
+  players get `rematch:open` and 10 s (`ROOM.REMATCH_WINDOW_MS`) to vote "다시 하기"; both voting
+  starts a new `Match` in the same room, and whoever has not voted is removed (`room:left`,
+  reason `timeout`). Whoever remains keeps the room at 1/2 and waits for a new opponent.
 - **`src/services/player.ts` is a deliberate copy of RoadDash's.** The `player` cookie (`{id,name}`)
   is shared by every Y3GAMES game so a player keeps one identity; keep the format identical.
-- **`Match` calls `onFinished` when a match ends** and `socketHandlers.ts` releases both sockets
-  from `activeMatches`. Without that, a later disconnect would replay the finished result and the
-  same sockets couldn't join a new match.
+- **`Match` calls `onFinished` when a match ends** and `RoomManager` turns that into the result
+  phase + rematch window. `RoomManager.leave()` detaches `entry.match` *before* calling
+  `Match.handleDisconnect()` so a walkover is not mistaken for a normal finish (no rematch window,
+  the winner just stays in the room at 1/2). Without `onFinished`, a later disconnect would replay
+  the finished result.
 - **`window.__arrowsDebug`** (in `GameScene`, gated by `import.meta.env.DEV`) exposes tile
-  positions, the escapable-arrow set and `joinQueue(name)` (bypasses the lobby form) so end-to-end tests can drive a real match without
+  positions, the escapable-arrow set, the room list and `createRoom` / `joinRoom` / `leaveRoom` /
+  `voteRematch` (they bypass the lobby form) so end-to-end tests can drive a real match without
   guessing canvas coordinates. Dead-code-eliminated from production builds.
 
 ## Gotchas
