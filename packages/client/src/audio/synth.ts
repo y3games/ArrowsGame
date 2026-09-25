@@ -111,10 +111,16 @@ export function scheduleStep(ctx: BaseAudioContext, dest: AudioNode, noise: Audi
       gain: tense ? 0.07 : 0.085,
       // The cheerful tune keeps its filter wide open: that is most of what makes it sound bright.
       cutoff: tense ? 2600 : 6500,
+      release: tense ? 0.06 : 0.1,
     });
+    if (!tense) {
+      // A square doubling the triangle gives it the bright, glassy edge of a toy xylophone.
+      playTone(ctx, dest, { freq: midiToHz(lead.midi), start: time, duration: lead.steps * stepLen * 0.85, type: 'square', gain: 0.075, cutoff: 8000, release: 0.08 });
+    }
     if (track.sparkle) {
-      // A bell-like ping an octave up, gone almost at once.
-      playTone(ctx, dest, { freq: midiToHz(lead.midi + 12), start: time, duration: 0.12, type: 'sine', gain: 0.04, attack: 0.002, release: 0.12 });
+      // A bell ringing an octave up — a music box's high tine — that dies away on its own.
+      playTone(ctx, dest, { freq: midiToHz(lead.midi + 12), start: time, duration: 0.2, type: 'sine', gain: 0.13, attack: 0.002, release: 0.24 });
+      playTone(ctx, dest, { freq: midiToHz(lead.midi + 19), start: time, duration: 0.12, type: 'sine', gain: 0.05, attack: 0.002, release: 0.16 });
     }
   }
 
@@ -127,12 +133,12 @@ export function scheduleStep(ctx: BaseAudioContext, dest: AudioNode, noise: Audi
 
   const bass = track.bass[step];
   if (bass !== null && bass !== undefined) {
-    playTone(ctx, dest, { freq: midiToHz(bass), start: time, duration: stepLen * 0.85, type: 'triangle', gain: tense ? 0.22 : 0.2, attack: 0.008 });
+    playTone(ctx, dest, { freq: midiToHz(bass), start: time, duration: stepLen * 0.85, type: 'triangle', gain: tense ? 0.22 : 0.15, attack: 0.008 });
   }
 
-  if (track.kick[step]) playKick(ctx, dest, time, tense ? 0.5 : 0.42);
+  if (track.kick[step]) playKick(ctx, dest, time, tense ? 0.5 : 0.22);
   if (track.snare[step]) playSnare(ctx, dest, noise, time, tense ? 0.14 : 0.12);
-  if (track.hat[step]) playHat(ctx, dest, noise, time, tense ? 0.06 : 0.055);
+  if (track.hat[step]) playHat(ctx, dest, noise, time, tense ? 0.06 : 0.075);
 }
 
 /**

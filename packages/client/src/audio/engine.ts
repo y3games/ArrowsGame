@@ -1,4 +1,4 @@
-import { buildTrack, stepSeconds, type Mood, type Track } from './score.js';
+import { buildTrack, cheerfulBpm, stepSeconds, type Mood, type Track } from './score.js';
 import {
   noiseBuffer,
   playBlockedSfx,
@@ -77,6 +77,8 @@ export class AudioEngine {
   private tracks = new Map<Mood, Track>();
   private player: Player | null = null;
   private mood: Mood = 'cheerful';
+  /** The solo level, which nudges the cheerful tune's tempo up; 1 everywhere outside a solo run. */
+  private level = 1;
   private muted = readMuted();
   private listeners = new Set<() => void>();
   private sfxPlayed = 0;
@@ -172,9 +174,19 @@ export class AudioEngine {
     if (player.nextTime < ctx.currentTime) player.nextTime = ctx.currentTime + 0.02;
     while (player.nextTime < ctx.currentTime + LOOKAHEAD_S) {
       scheduleStep(ctx, player.gain, this.noise, player.track, player.step, player.nextTime);
-      player.nextTime += stepSeconds(player.track);
+      player.nextTime += stepSeconds({ bpm: this.bpmFor(player.mood, player.track) });
       player.step = (player.step + 1) % player.track.steps;
     }
+  }
+
+  /** The tempo a tune is played at right now — the tense one never changes, the cheerful one follows the level. */
+  private bpmFor(mood: Mood, track: Track): number {
+    return mood === 'cheerful' ? cheerfulBpm(this.level) : track.bpm;
+  }
+
+  /** Called with the solo level when a run starts (and 1 when it ends): the music picks up the pace a little per level. */
+  setLevel(level: number): void {
+    this.level = Math.max(1, Math.floor(level));
   }
 
   /** Which tune should be playing. Cheap to call every frame — it only does anything on a change. */
@@ -236,11 +248,12 @@ export class AudioEngine {
   }
 
   /** Dev/test only: what the engine is doing right now. */
-  debugState(): { state: string; mood: Mood; playing: Mood | null; muted: boolean; sfxPlayed: number; sfxLog: SfxKind[] } {
+  debugState(): { state: string; mood: Mood; playing: Mood | null; bpm: number | null; muted: boolean; sfxPlayed: number; sfxLog: SfxKind[] } {
     return {
       state: this.ctx?.state ?? 'locked',
       mood: this.mood,
       playing: this.player?.mood ?? null,
+      bpm: this.player ? this.bpmFor(this.player.mood, this.player.track) : null,
       muted: this.muted,
       sfxPlayed: this.sfxPlayed,
       sfxLog: [...this.sfxLog],

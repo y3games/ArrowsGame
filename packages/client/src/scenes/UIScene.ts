@@ -196,6 +196,7 @@ export class UIScene extends Phaser.Scene {
     this.turn = null;
     this.solo = null;
     audio.setMood('cheerful');
+    audio.setLevel(1);
     this.roundIndicatorText.setText('');
     this.youScoreText.setText('');
     this.opponentScoreText.setText('');
@@ -235,6 +236,7 @@ export class UIScene extends Phaser.Scene {
     this.turn = null;
     this.overlayText.setVisible(false);
     this.solo = { timeLimitMs: payload.timeLimitMs, deadline: payload.startsAt + payload.timeLimitMs, mistakes: 0, over: false, frozenMs: 0 };
+    audio.setLevel(payload.level);
     this.roundIndicatorText.setText(`레벨 ${payload.level} · 3분 안에 모두 제거하세요 (실수 시 -10초)`);
     this.youScoreText.setText('실수 0회').setColor(css(RENDER.COLORS.countdownWarn)).setX(RENDER.CANVAS_WIDTH / 2);
     this.scoreSeparator.setVisible(false);

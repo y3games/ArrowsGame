@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { STEPS_PER_BAR, buildTrack, loopSeconds, midiToHz, noteToMidi, stepSeconds, type Mood } from '../src/audio/score.js';
+import {
+  CHEERFUL_BASE_BPM,
+  CHEERFUL_BPM_PER_LEVEL,
+  CHEERFUL_MAX_BPM,
+  STEPS_PER_BAR,
+  buildTrack,
+  cheerfulBpm,
+  loopSeconds,
+  midiToHz,
+  noteToMidi,
+  stepSeconds,
+  type Mood,
+} from '../src/audio/score.js';
 
 describe('note names', () => {
   it('maps names to MIDI numbers', () => {
@@ -74,16 +86,25 @@ describe('moods', () => {
     expect(loopSeconds(tense)).toBeGreaterThan(8);
   });
 
-  it('the cheerful tune is brighter: a higher, wider melody than the tense one or the old tune', () => {
-    const meanPitch = (t: typeof cheerful): number => {
-      const notes = [...t.lead.values()];
-      return notes.reduce((sum, n) => sum + n.midi, 0) / notes.length;
-    };
-    // The previous cheerful melody sat around G5–A5 (MIDI ~79); this one lives higher.
-    expect(meanPitch(cheerful)).toBeGreaterThan(80);
-    expect(cheerful.bpm).toBeGreaterThanOrEqual(144);
+  it('the cheerful tune keeps a high, bell-like register and is a good deal slower than before', () => {
+    const meanPitch = [...cheerful.lead.values()].reduce((sum, n) => sum + n.midi, 0) / cheerful.lead.size;
+    expect(meanPitch).toBeGreaterThan(80);
+    // It used to run at 152 bpm; a gentler tempo is the point of the nursery-rhyme version.
+    expect(cheerful.bpm).toBe(CHEERFUL_BASE_BPM);
+    expect(cheerful.bpm).toBeLessThan(140);
     expect(cheerful.sparkle).toBe(true);
     expect(tense.sparkle).toBe(false);
+  });
+
+  it('is a singable tune: mostly steps and small skips, with short phrases that repeat', () => {
+    const notes = [...cheerful.lead.entries()].sort((a, b) => a[0] - b[0]).map(([, n]) => n.midi);
+    let small = 0;
+    for (let i = 1; i < notes.length; i++) if (Math.abs(notes[i]! - notes[i - 1]!) <= 4) small++;
+    expect(small / (notes.length - 1)).toBeGreaterThan(0.75);
+    // The opening phrase comes back in bar 5 and bar 13 (an octave higher).
+    const bar = (i: number): number[] => [...cheerful.lead.entries()].filter(([step]) => Math.floor(step / STEPS_PER_BAR) === i).sort((a, b) => a[0] - b[0]).map(([, n]) => n.midi);
+    expect(bar(4)).toEqual(bar(0));
+    expect(bar(12)).toEqual(bar(0).map((m) => m + 12));
   });
 
   it('the cheerful tune bounces chord stabs on the off-beats only, and the tense one has none', () => {
@@ -100,15 +121,50 @@ describe('moods', () => {
     expect(tense.stabs.every((c) => c === null)).toBe(true);
   });
 
-  it('stabs are the chord under the bar: major thirds on C, minor on Am', () => {
-    // Bar 1 is C (root C3): C E G. Bar 3 is A minor: A C E.
+  it('stabs are the chord under the bar: major thirds on C, minor on Am and Dm', () => {
+    // Bar 1 is C (root C3): C E G. Bar 9 is A minor: A C E. Bar 10 is D minor: D F A.
     expect(cheerful.stabs[1]).toEqual([60, 64, 67]);
-    expect(cheerful.stabs[2 * 8 + 1]).toEqual([69, 72, 76]);
+    expect(cheerful.stabs[8 * 8 + 1]).toEqual([69, 72, 76]);
+    expect(cheerful.stabs[9 * 8 + 1]).toEqual([62, 65, 69]);
   });
 
   it('a hold (-) lengthens the previous note instead of starting a new one', () => {
     // Bar 2 of the cheerful tune ends "... A5 -": the last note rings for two steps.
     const held = [...cheerful.lead.values()].filter((n) => n.steps === 2);
     expect(held.length).toBeGreaterThan(0);
+  });
+});
+
+describe('tempo follows the solo level', () => {
+  it('starts at the base tempo on level 1 and for anything below it', () => {
+    expect(cheerfulBpm(1)).toBe(CHEERFUL_BASE_BPM);
+    expect(cheerfulBpm(0)).toBe(CHEERFUL_BASE_BPM);
+    expect(cheerfulBpm(-3)).toBe(CHEERFUL_BASE_BPM);
+  });
+
+  it('gets a little faster with every level, but only a little', () => {
+    for (let level = 2; level <= 30; level++) {
+      const step = cheerfulBpm(level) - cheerfulBpm(level - 1);
+      expect(step).toBeGreaterThanOrEqual(0);
+      expect(step).toBeLessThanOrEqual(CHEERFUL_BPM_PER_LEVEL);
+    }
+    expect(cheerfulBpm(2)).toBe(CHEERFUL_BASE_BPM + CHEERFUL_BPM_PER_LEVEL);
+    // Level 5 is only about a fifteenth quicker than level 1.
+    expect(cheerfulBpm(5) / cheerfulBpm(1)).toBeLessThan(1.08);
+  });
+
+  it('tops out well below the tense tune, so the switch at ten seconds still feels like a jump', () => {
+    expect(cheerfulBpm(999)).toBe(CHEERFUL_MAX_BPM);
+    expect(CHEERFUL_MAX_BPM).toBeLessThan(buildTrack('tense').bpm - 20);
+    expect(CHEERFUL_MAX_BPM / CHEERFUL_BASE_BPM).toBeLessThanOrEqual(1.25);
+  });
+
+  it('keeps the loop a sensible length at the fastest and the slowest tempo', () => {
+    const cheerful = buildTrack('cheerful');
+    for (const bpm of [CHEERFUL_BASE_BPM, CHEERFUL_MAX_BPM]) {
+      const seconds = loopSeconds({ bpm, steps: cheerful.steps });
+      expect(seconds).toBeGreaterThan(20);
+      expect(seconds).toBeLessThan(45);
+    }
   });
 });

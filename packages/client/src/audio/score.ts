@@ -35,7 +35,7 @@ interface BarDef {
 }
 
 type BassStyle = 'oompah' | 'drive';
-type DrumStyle = 'bouncy' | 'urgent';
+type DrumStyle = 'gentle' | 'urgent';
 
 interface TrackDef {
   bpm: number;
@@ -51,36 +51,48 @@ interface TrackDef {
 
 const bar = (root: string, lead: string, minor = false): BarDef => ({ root, lead, minor });
 
+/** The cheerful tune's tempo on level 1 (and in the lobby and in multiplayer), and how it picks up in solo. */
+export const CHEERFUL_BASE_BPM = 120;
+export const CHEERFUL_BPM_PER_LEVEL = 2;
+export const CHEERFUL_MAX_BPM = 144;
+
+/** Solo runs speed the cheerful tune up a touch with every level, up to a ceiling — never enough to notice at once. */
+export function cheerfulBpm(level: number): number {
+  const steps = Math.max(0, Math.floor(level) - 1);
+  return Math.min(CHEERFUL_MAX_BPM, CHEERFUL_BASE_BPM + CHEERFUL_BPM_PER_LEVEL * steps);
+}
+
 /**
- * Cheerful: C major, quick and bright, 16 bars (about 25 seconds) that loop forever. It runs on the
- * happiest chord loop there is (I–V–vi–IV), keeps the melody high, doubles it with bell-like pings and
- * bounces chord stabs on the off-beats. The first eight bars state the tune, the last eight lift
- * it a step higher and turn back to the start.
+ * Cheerful: a nursery-rhyme kind of tune in C major — short repeated phrases, mostly stepwise, easy to
+ * hum — played like a music box: a soft triangle lead with a bell ringing an octave above and
+ * light off-beat chord "plinks". 16 bars that loop forever (about half a minute): the tune, its
+ * answer, a bridge that climbs the scale, and the tune once more, a little higher. It runs at
+ * `CHEERFUL_BASE_BPM` and creeps faster with the solo level (see `cheerfulBpm`).
  */
 const CHEERFUL: TrackDef = {
-  bpm: 152,
-  leadWave: 'square',
+  bpm: CHEERFUL_BASE_BPM,
+  leadWave: 'triangle',
   sparkle: true,
   stabs: true,
   bassStyle: 'oompah',
-  drumStyle: 'bouncy',
+  drumStyle: 'gentle',
   bars: [
-    bar('C3', 'G5 G5 E6 D6 C6 - G5 E5'),
-    bar('G2', 'D6 D6 B5 G5 D6 - B5 -'),
-    bar('A2', 'C6 C6 A5 C6 E6 - D6 C6', true),
-    bar('F2', 'A5 C6 F6 E6 D6 C6 A5 -'),
-    bar('C3', 'G5 G5 E6 D6 C6 - G5 E5'),
-    bar('G2', 'B5 D6 G6 F6 E6 D6 B5 G5'),
-    bar('A2', 'A5 C6 E6 C6 A5 - B5 C6', true),
-    bar('F2', 'D6 C6 A5 F5 G5 B5 D6 -'),
-    bar('F2', 'C6 - C6 A5 F6 - E6 C6'),
-    bar('G2', 'D6 - D6 B5 G6 - F6 D6'),
-    bar('C3', 'E6 G6 E6 C6 G5 C6 E6 -'),
-    bar('A2', 'A5 C6 E6 A6 - G6 E6 C6', true),
-    bar('F2', 'F6 E6 D6 C6 A5 C6 F6 -'),
-    bar('G2', 'G6 - F6 D6 B5 D6 G6 -'),
-    bar('C3', 'E6 C6 G5 C6 E6 G6 E6 C6'),
-    bar('C3', 'C6 - G5 - E5 - G5 -'),
+    bar('C3', 'E5 E5 G5 - G5 E5 C5 -'),
+    bar('F2', 'F5 F5 A5 - A5 F5 C5 -'),
+    bar('G2', 'G5 G5 B5 - D6 B5 G5 -'),
+    bar('C3', 'E5 G5 C6 - - - _ _'),
+    bar('C3', 'E5 E5 G5 - G5 E5 C5 -'),
+    bar('F2', 'A5 A5 C6 - A5 F5 A5 -'),
+    bar('G2', 'B5 B5 D6 - B5 G5 F5 -'),
+    bar('C3', 'E5 - C5 - C5 - _ _'),
+    bar('A2', 'C6 C6 E6 - E6 C6 A5 -', true),
+    bar('D3', 'D6 D6 F6 - F6 D6 A5 -', true),
+    bar('G2', 'G5 A5 B5 C6 D6 - B5 -'),
+    bar('C3', 'C6 - E6 - G6 - _ _'),
+    bar('C3', 'E6 E6 G6 - G6 E6 C6 -'),
+    bar('F2', 'F6 F6 A6 - A6 F6 C6 -'),
+    bar('G2', 'G6 - D6 - B5 - G5 -'),
+    bar('C3', 'C6 - E5 - C5 - _ _'),
   ],
 };
 
@@ -144,7 +156,8 @@ const BASS_PATTERN: Record<BassStyle, (root: number) => (number | null)[]> = {
 };
 
 const DRUM_PATTERN: Record<DrumStyle, { kick: number[]; snare: number[]; hat: number[] }> = {
-  bouncy: { kick: [0, 4], snare: [2, 6], hat: [1, 3, 5, 7] },
+  // Soft and steady, like a music box: a light thump on one and three, ticks on the off-beats, no snare.
+  gentle: { kick: [0, 4], snare: [], hat: [1, 3, 5, 7] },
   urgent: { kick: [0, 2, 4, 6], snare: [6, 7], hat: [0, 1, 2, 3, 4, 5, 6, 7] },
 };
 
