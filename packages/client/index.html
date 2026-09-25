@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>화살표 탈출 미로</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #12121c;
+        overscroll-behavior: none;
+      }
+      #app {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #app canvas {
+        touch-action: none;
+        user-select: none;
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+      #lobby {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        box-sizing: border-box;
+        background: rgba(18, 18, 28, 0.97);
+        color: #e8eaf6;
+        font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+      }
+      #lobby .panel {
+        width: 100%;
+        max-width: 360px;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        text-align: center;
+      }
+      #lobby h1 {
+        margin: 0;
+        font-size: 26px;
+      }
+      #lobby p {
+        margin: 0;
+        color: #a5adce;
+      }
+      #lobby input {
+        font: inherit;
+        font-size: 18px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: 2px solid #3d4266;
+        background: #1c1d2e;
+        color: #e8eaf6;
+        text-align: center;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      #lobby input:focus {
+        outline: none;
+        border-color: #4c6ef5;
+      }
+      #lobby button {
+        font: inherit;
+        font-size: 18px;
+        padding: 12px 14px;
+        border-radius: 10px;
+        border: none;
+        background: #4c6ef5;
+        color: #fff;
+        cursor: pointer;
+      }
+      #lobby button.secondary {
+        background: #2b2f4a;
+        color: #e8eaf6;
+      }
+      #lobby button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+      #lobby .error {
+        color: #ff8787;
+        font-size: 14px;
+      }
+      #lobby #lobby-status {
+        font-size: 14px;
+      }
+      #result-score {
+        font-size: 32px;
+        font-weight: 700;
+      }
+      #result-rounds {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 15px;
+      }
+      #result-rounds li {
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #1c1d2e;
+      }
+      #result-rounds li.won {
+        border-left: 4px solid #37b24d;
+      }
+      #result-rounds li.lost {
+        border-left: 4px solid #e03131;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="lobby" hidden>
+      <section id="lobby-idle" class="panel">
+        <h1>화살표 탈출 미로</h1>
+        <p>1대1 실시간 대전 · 3판 2선승</p>
+        <form id="lobby-form" class="panel" autocomplete="off">
+          <input id="lobby-name" type="text" placeholder="닉네임" aria-label="닉네임" />
+          <div id="lobby-error" class="error" role="alert" hidden></div>
+          <button id="lobby-start" type="submit">대전 시작</button>
+        </form>
+        <p id="lobby-status" role="status"></p>
+      </section>
+      <section id="lobby-searching" class="panel" hidden>
+        <h1>상대를 찾는 중…</h1>
+        <button id="lobby-cancel" type="button" class="secondary">취소</button>
+      </section>
+      <section id="lobby-result" class="panel" hidden>
+        <h1 id="result-title"></h1>
+        <div id="result-score"></div>
+        <ol id="result-rounds"></ol>
+        <p id="result-note" hidden></p>
+        <button id="result-rematch" type="button">다시 하기</button>
+        <button id="result-lobby" type="button" class="secondary">로비로</button>
+      </section>
+      <section id="lobby-disconnected" class="panel" hidden>
+        <h1>서버 연결이 끊어졌습니다</h1>
+        <p>진행 중이던 대전은 종료되었습니다.</p>
+        <button id="disconnected-lobby" type="button">로비로</button>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

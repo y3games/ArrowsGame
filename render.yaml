@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: arrows-game-server
+    runtime: node
+    plan: free
+    # --include=dev: Render sets NODE_ENV=production, which would otherwise skip esbuild/tsx.
+    buildCommand: npm ci --include=dev && npm run build -w @arrows/server
+    startCommand: npm start -w @arrows/server
+    healthCheckPath: /healthz
+    envVars:
+      # Comma-separated list of allowed client origins.
+      - key: CORS_ORIGIN
+        value: https://y3games.github.io
+      - key: NODE_VERSION
+        value: "24"
