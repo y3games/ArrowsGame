@@ -8,12 +8,12 @@ import { GAMEPLAY } from '@arrows/shared';
 export const RENDER = {
   CANVAS_WIDTH: 640,
   CANVAS_HEIGHT: 960,
-  GRID_TOP: 190,
-  GRID_MARGIN_X: 32,
-  COUNTDOWN_RADIUS: 30,
+  GRID_TOP: 176,
+  GRID_MARGIN_X: 12,
+  COUNTDOWN_RADIUS: 34,
   COUNTDOWN_Y: 100,
   /** Slide-out speed, in cells per second. */
-  SLIDE_CELLS_PER_SEC: 22,
+  SLIDE_CELLS_PER_SEC: 32,
   FLASH_MS: 90,
   COLORS: {
     background: 0x12121c,
@@ -25,6 +25,9 @@ export const RENDER = {
     /** You are always blue, the opponent always orange — on the HUD, the ring and the slide-out. */
     you: 0x4c6ef5,
     opponent: 0xff922b,
+    /** Banner fill behind white text; the opponent's orange is darkened so white stays readable. */
+    opponentBanner: 0xd9600a,
+    gridFrameIdle: 0x2b2f4a,
   },
   /** Body colours, picked per arrow so neighbouring snakes are easy to tell apart. */
   ARROW_PALETTE: [0xe8eaf6, 0x74c0fc, 0x69db7c, 0xffd43b, 0xf783ac, 0xb197fc, 0x63e6be, 0xffa94d],

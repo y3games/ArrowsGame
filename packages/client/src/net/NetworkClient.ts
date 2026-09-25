@@ -13,6 +13,9 @@ export interface NetworkClient {
   /** Also how a player says "나가기" on the result screen. */
   leaveRoom(): void;
   voteRematch(): void;
+  startSolo(): void;
+  soloClick(gameId: string, arrowId: string): void;
+  leaveSolo(): void;
   sendReady(matchId: string, roundIndex: number): void;
   sendAttempt(matchId: string, roundIndex: number, arrowId: string): void;
   on<K extends keyof ServerToClientEvents>(event: K, handler: ServerToClientEvents[K]): void;

@@ -54,6 +54,18 @@ export class SocketIONetworkClient implements NetworkClient {
     this.socket.emit('rematch:vote');
   }
 
+  startSolo(): void {
+    this.socket.emit('solo:start');
+  }
+
+  soloClick(gameId: string, arrowId: string): void {
+    this.socket.emit('solo:click', { gameId, arrowId });
+  }
+
+  leaveSolo(): void {
+    this.socket.emit('solo:leave');
+  }
+
   sendReady(matchId: string, roundIndex: number): void {
     this.socket.emit('round:ready', { matchId, roundIndex });
   }

@@ -61,6 +61,11 @@ Two separate hosts (details and the one-time setup steps: `docs/03-notes/2026-09
   `src/ui/lobby.ts`), not Phaser objects — a canvas can't host a text field and Korean IME needs a
   real `<input>`. `GameScene` owns the flow (`resetMatch` and the room/match phases); the scene is
   never restarted between matches.
+- **Solo mode is a `SoloGame` on the server** (`packages/server/src/SoloGame.ts`, pure rules in
+  `packages/shared/src/game/solo.ts`): clear the board within `SOLO.TIME_LIMIT_MS` (3 min), each
+  blocked tap costs `SOLO.PENALTY_MS` (10 s) off the time left, the server timer ends the run. A
+  socket is in a room *or* in solo play, never both (`socketHandlers.ts` guards both directions);
+  while soloing it leaves the `lobby` Socket.IO room and re-enters via `RoomManager.onConnect()`.
 - **Players meet in rooms, not a random queue.** The lobby lists open rooms (`rooms:list`, `n/2`);
   a room seats 2, and the match starts automatically when the second player joins. Seating/vote rules are the
   pure functions in `packages/shared/src/game/room.ts`; `packages/server/src/rooms.ts`

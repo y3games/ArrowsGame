@@ -28,6 +28,10 @@ export interface ClientToServerEvents {
   'room:join': (payload: { roomId: string; nickname?: string }) => void;
   'room:leave': () => void;
   'rematch:vote': () => void;
+  'solo:start': () => void;
+  'solo:click': (payload: { gameId: string; arrowId: string }) => void;
+  /** Gives up a running solo game and goes back to the lobby. */
+  'solo:leave': () => void;
   'round:ready': (payload: { matchId: string; roundIndex: number }) => void;
   'attempt:click': (payload: { matchId: string; roundIndex: number; arrowId: string }) => void;
 }
@@ -75,6 +79,30 @@ export interface ServerToClientEvents {
     /** Null for a draw. */
     winner: PlayerTag | null;
     roundWins: { p1: number; p2: number };
+  }) => void;
+  'solo:started': (payload: {
+    gameId: string;
+    board: BoardDTO;
+    /** Time until the clock starts, measured from receipt so client and server clocks need not agree. */
+    startsInMs: number;
+    timeLimitMs: number;
+  }) => void;
+  'solo:result': (payload: {
+    arrowId: string;
+    correct: boolean;
+    remaining: number;
+    mistakes: number;
+    /** Time left as of this event, penalties included. */
+    timeLeftMs: number;
+  }) => void;
+  'solo:finished': (payload: {
+    outcome: 'cleared' | 'timeout';
+    timeLeftMs: number;
+    /** Wall-clock time from the clock starting to the last arrow (or to the time-out). */
+    elapsedMs: number;
+    mistakes: number;
+    removed: number;
+    total: number;
   }) => void;
   'opponent:disconnected': (payload: { matchId: string }) => void;
   'error:generic': (payload: { code: string; message: string }) => void;

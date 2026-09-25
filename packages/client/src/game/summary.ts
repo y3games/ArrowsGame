@@ -17,3 +17,18 @@ export function outcomeLabel(outcome: Outcome): string {
 export function describeRound(record: RoundRecord, index: number): string {
   return `${index + 1}라운드 ${OUTCOME_LABEL[record.result]} · 내 ${record.yourScore}점 : 상대 ${record.opponentScore}점`;
 }
+
+/** "2:05" — minutes and seconds, rounded up so the clock never shows 0:00 while time is left. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+export interface SoloSummary {
+  outcome: 'cleared' | 'timeout';
+  timeLeftMs: number;
+  elapsedMs: number;
+  mistakes: number;
+  removed: number;
+  total: number;
+}

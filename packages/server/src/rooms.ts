@@ -45,9 +45,19 @@ export class RoomManager {
 
   constructor(private readonly io: AppServer) {}
 
+  /** Puts a socket in the lobby and sends it the current room list — on connect, and when it returns from solo play. */
   onConnect(socket: AppSocket): void {
     socket.join(LOBBY);
     socket.emit('rooms:list', this.list());
+  }
+
+  /** A socket busy with something else (a solo run) has no use for the room list. */
+  leaveLobby(socket: AppSocket): void {
+    socket.leave(LOBBY);
+  }
+
+  isSeated(socket: AppSocket): boolean {
+    return this.roomOf.has(socket.id);
   }
 
   create(socket: AppSocket, nickname: string): void {

@@ -25,6 +25,11 @@ export interface GameEventMap {
     roundWins: { p1: number; p2: number };
   };
   'match:finished': { result: Outcome; roundWins: { p1: number; p2: number } };
+  /** A solo run was dealt; `startsAt` is on the `performance.now()` clock. */
+  'solo:preview': { total: number; startsAt: number; timeLimitMs: number };
+  /** After every tap: the clock (`deadline`, `performance.now()` clock), mistakes and arrows left. */
+  'solo:update': { deadline: number; mistakes: number; remaining: number; total: number };
+  'solo:finished': { outcome: 'cleared' | 'timeout'; timeLeftMs: number };
 }
 
 class TypedEmitter extends Phaser.Events.EventEmitter {

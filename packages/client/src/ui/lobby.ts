@@ -1,6 +1,6 @@
 import type { RoomErrorCode, RoomSnapshot, RoomSummary } from '@arrows/shared';
 import { MAX_NAME_LENGTH, loadPlayer, normalizeName, savePlayer } from '../services/player.js';
-import { describeRound, type Outcome, type RoundRecord } from '../game/summary.js';
+import { describeRound, formatClock, type Outcome, type RoundRecord, type SoloSummary } from '../game/summary.js';
 import type { ConnectionState } from '../net/NetworkClient.js';
 
 /**
@@ -10,7 +10,7 @@ import type { ConnectionState } from '../net/NetworkClient.js';
  * wires it up.
  */
 
-export type LobbyView = 'idle' | 'room' | 'result' | 'disconnected' | 'hidden';
+export type LobbyView = 'idle' | 'room' | 'result' | 'solo' | 'disconnected' | 'hidden';
 
 export interface LobbyHandlers {
   /** Called with an already-normalized, already-saved nickname. */
@@ -19,6 +19,9 @@ export interface LobbyHandlers {
   /** "나가기" — from the waiting room and from the result screen. */
   onLeaveRoom(): void;
   onRematch(): void;
+  onSolo(): void;
+  /** "나가기" during a solo run. */
+  onSoloExit(): void;
   /** From the disconnected panel: there is no room to leave, just go back to the lobby. */
   onToLobby(): void;
 }
@@ -35,6 +38,9 @@ export interface Lobby {
   /** Seating changed (or was just entered): refreshes the room panel and the result screen's controls. */
   setRoom(snapshot: RoomSnapshot): void;
   showResult(summary: MatchSummary): void;
+  showSoloResult(summary: SoloSummary): void;
+  /** The floating "나가기" button, shown while a solo run is in progress. */
+  setSoloExitVisible(visible: boolean): void;
   /** The rematch window opened; the server removes anyone who has not voted when it closes. */
   openRematch(timeoutMs: number): void;
   setRematchStatus(status: { youVoted: boolean; opponentVoted: boolean }): void;
@@ -65,6 +71,7 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
     idle: element('lobby-idle'),
     room: element('lobby-room'),
     result: element('lobby-result'),
+    solo: element('lobby-solo'),
     disconnected: element('lobby-disconnected'),
   };
   const form = element<HTMLFormElement>('lobby-form');
@@ -72,6 +79,13 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   const nameError = element('lobby-error');
   const notice = element('lobby-notice');
   const createButton = element<HTMLButtonElement>('lobby-create');
+  const soloStartButton = element<HTMLButtonElement>('lobby-solo-start');
+  const soloAgainButton = element<HTMLButtonElement>('solo-again');
+  const soloLobbyButton = element<HTMLButtonElement>('solo-lobby');
+  const soloTitle = element('solo-title');
+  const soloTime = element('solo-time');
+  const soloStats = element('solo-stats');
+  const gameExitButton = element<HTMLButtonElement>('game-exit');
   const status = element('lobby-status');
   const roomList = element<HTMLUListElement>('room-list');
   const roomEmpty = element('room-empty');
@@ -132,6 +146,8 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   function renderConnection(): void {
     const connected = connection === 'connected';
     createButton.disabled = !connected;
+    soloStartButton.disabled = !connected;
+    soloAgainButton.disabled = !connected;
     renderRooms();
     renderResult();
 
@@ -234,12 +250,18 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
   const onLeaveRoom = (): void => handlers.onLeaveRoom();
   const onRematch = (): void => handlers.onRematch();
   const onToLobby = (): void => handlers.onToLobby();
+  const onSolo = (): void => handlers.onSolo();
+  const onSoloExit = (): void => handlers.onSoloExit();
 
   form.addEventListener('submit', onSubmit);
   roomLeaveButton.addEventListener('click', onLeaveRoom);
   resultLeaveButton.addEventListener('click', onLeaveRoom);
   rematchButton.addEventListener('click', onRematch);
   disconnectedLobbyButton.addEventListener('click', onToLobby);
+  soloStartButton.addEventListener('click', onSolo);
+  soloAgainButton.addEventListener('click', onSolo);
+  soloLobbyButton.addEventListener('click', onToLobby);
+  gameExitButton.addEventListener('click', onSoloExit);
 
   renderConnection();
   show('idle');
@@ -277,6 +299,29 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
       );
       renderResult();
       show('result');
+    },
+
+    showSoloResult(summary) {
+      const cleared = summary.outcome === 'cleared';
+      soloTitle.textContent = cleared ? '클리어!' : '시간 초과…';
+      soloTime.textContent = cleared ? `남은 시간 ${formatClock(summary.timeLeftMs)}` : `${summary.removed} / ${summary.total}개 제거`;
+      const lines = [
+        cleared ? `걸린 시간 ${formatClock(summary.elapsedMs)}` : '3분 안에 모두 제거하지 못했습니다',
+        `실수 ${summary.mistakes}회${summary.mistakes > 0 ? ` (-${summary.mistakes * 10}초)` : ''}`,
+        `제거한 화살표 ${summary.removed} / ${summary.total}`,
+      ];
+      soloStats.replaceChildren(
+        ...lines.map((text) => {
+          const item = document.createElement('li');
+          item.textContent = text;
+          return item;
+        }),
+      );
+      show('solo');
+    },
+
+    setSoloExitVisible(visible) {
+      gameExitButton.hidden = !visible;
     },
 
     openRematch(timeoutMs) {
@@ -327,6 +372,10 @@ export function createLobby(handlers: LobbyHandlers): Lobby {
       resultLeaveButton.removeEventListener('click', onLeaveRoom);
       rematchButton.removeEventListener('click', onRematch);
       disconnectedLobbyButton.removeEventListener('click', onToLobby);
+      soloStartButton.removeEventListener('click', onSolo);
+      soloAgainButton.removeEventListener('click', onSolo);
+      soloLobbyButton.removeEventListener('click', onToLobby);
+      gameExitButton.removeEventListener('click', onSoloExit);
     },
   };
 }

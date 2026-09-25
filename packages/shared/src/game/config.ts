@@ -4,13 +4,17 @@
  * tunables (colors, tween durations, canvas size) live in the client package instead.
  */
 export const GAMEPLAY = {
-  GRID_ROWS: 9,
-  GRID_COLS: 9,
+  GRID_ROWS: 18,
+  GRID_COLS: 18,
   /** Snake length range (cells) while the board is being laid out; gaps are later filled with shorter ones. */
-  ARROW_MIN_LENGTH: 2,
-  ARROW_MAX_LENGTH: 7,
-  /** Share of the grid the arrows should cover. */
-  BOARD_FILL: 0.8,
+  ARROW_MIN_LENGTH: 4,
+  ARROW_MAX_LENGTH: 16,
+  /** Share of the grid the arrows should cover (what the layout can actually reach is a bit lower). */
+  BOARD_FILL: 0.88,
+  /** Lower = more winding snakes (a snake keeps going straight with this chance when it could turn). */
+  ARROW_STRAIGHT_BIAS: 0.3,
+  /** Candidates drawn per placement; higher interlocks the arrows more. See `generateBoard`. */
+  BOARD_INTERLOCK: 10,
   /** The player who opens a round has less time than the turns that follow. */
   FIRST_TURN_MS: 5_000,
   TURN_MS: 10_000,
@@ -21,6 +25,12 @@ export const GAMEPLAY = {
 } as const;
 
 export const WIN_ROUNDS_NEEDED = Math.ceil(GAMEPLAY.BEST_OF / 2);
+
+/** Single player: clear the whole board before the clock runs out; every blocked tap costs time. */
+export const SOLO = {
+  TIME_LIMIT_MS: 180_000,
+  PENALTY_MS: 10_000,
+} as const;
 
 export const ROOM = {
   CAPACITY: 2,

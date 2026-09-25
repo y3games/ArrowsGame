@@ -16,6 +16,18 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/** Number of turns a snake takes along its body. */
+function countBends(cells: { row: number; col: number }[]): number {
+  let bends = 0;
+  for (let i = 2; i < cells.length; i++) {
+    const a = cells[i - 2]!;
+    const b = cells[i - 1]!;
+    const c = cells[i]!;
+    if (b.row - a.row !== c.row - b.row || b.col - a.col !== c.col - b.col) bends++;
+  }
+  return bends;
+}
+
 /** Removes any escapable arrow until none is left; true if that empties the board. */
 function isFullyClearable(board: Board): boolean {
   const remainingIds = new Set(board.arrows.map((a) => a.id));
@@ -86,22 +98,47 @@ describe('generateBoard', () => {
     }
   }
 
-  it('lays out long, maze-like snakes covering most of the default board', () => {
+  it('lays out long, winding, densely packed snakes on the default board', () => {
+    const seeds = Array.from({ length: 10 }, (_, i) => i + 1);
     let covered = 0;
     let longest = 0;
-    for (let seed = 1; seed <= 20; seed++) {
+    let bendsPerArrow = 0;
+    for (const seed of seeds) {
       const b = generateBoard({
         rows: GAMEPLAY.GRID_ROWS,
         cols: GAMEPLAY.GRID_COLS,
         minLength: GAMEPLAY.ARROW_MIN_LENGTH,
         maxLength: GAMEPLAY.ARROW_MAX_LENGTH,
         fill: GAMEPLAY.BOARD_FILL,
+        straightBias: GAMEPLAY.ARROW_STRAIGHT_BIAS,
+        interlock: GAMEPLAY.BOARD_INTERLOCK,
         rng: mulberry32(seed),
       });
+      expect(isFullyClearable(b)).toBe(true);
       covered += b.arrows.reduce((sum, a) => sum + a.cells.length, 0) / (b.rows * b.cols);
       longest = Math.max(longest, ...b.arrows.map((a) => a.cells.length));
+      bendsPerArrow += b.arrows.reduce((sum, a) => sum + countBends(a.cells), 0) / b.arrows.length;
     }
-    expect(covered / 20).toBeGreaterThan(0.7);
-    expect(longest).toBeGreaterThanOrEqual(5);
+    expect(covered / seeds.length).toBeGreaterThan(0.7);
+    expect(longest).toBeGreaterThanOrEqual(12);
+    expect(bendsPerArrow / seeds.length).toBeGreaterThan(1.5);
+  });
+
+  it('interlocks arrows more when asked to (longer chains of who-must-go-first)', () => {
+    const depth = (interlock: number): number => {
+      let total = 0;
+      for (let seed = 1; seed <= 8; seed++) {
+        const b = generateBoard({ rows: 18, cols: 18, minLength: 4, maxLength: 16, fill: 0.88, straightBias: 0.3, interlock, rng: mulberry32(seed) });
+        const remaining = new Set(b.arrows.map((a) => a.id));
+        let waves = 0;
+        while (remaining.size > 0) {
+          for (const a of findEscapableArrows(b, remaining)) remaining.delete(a.id);
+          waves++;
+        }
+        total += waves;
+      }
+      return total;
+    };
+    expect(depth(10)).toBeGreaterThan(depth(1));
   });
 });

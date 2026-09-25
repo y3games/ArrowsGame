@@ -146,6 +146,39 @@
         font-weight: 700;
         font-variant-numeric: tabular-nums;
       }
+      #game-exit {
+        position: fixed;
+        top: 10px;
+        left: 10px;
+        z-index: 5;
+        font: inherit;
+        font-size: 15px;
+        padding: 8px 14px;
+        border-radius: 10px;
+        border: none;
+        background: #2b2f4a;
+        color: #e8eaf6;
+        cursor: pointer;
+      }
+      #solo-time {
+        font-size: 44px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      #solo-stats {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 15px;
+      }
+      #solo-stats li {
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #1c1d2e;
+      }
       #result-score {
         font-size: 32px;
         font-weight: 700;
@@ -177,6 +210,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <button id="game-exit" type="button" hidden>나가기</button>
     <div id="lobby" hidden>
       <section id="lobby-idle" class="panel">
         <h1>화살표 탈출 미로</h1>
@@ -187,6 +221,7 @@
           <div id="lobby-notice" class="notice" role="status" hidden></div>
           <button id="lobby-create" type="submit">방 만들기</button>
         </form>
+        <button id="lobby-solo-start" type="button" class="secondary">싱글 플레이 (3분)</button>
         <h2>열린 방</h2>
         <ul id="room-list" aria-label="열린 방 목록"></ul>
         <p id="room-empty" class="hint">열린 방이 없습니다. 방을 만들어 보세요.</p>
@@ -206,6 +241,13 @@
         <p id="result-countdown" class="hint" role="status" hidden></p>
         <button id="result-rematch" type="button" hidden>다시 하기</button>
         <button id="result-leave" type="button" class="secondary">나가기</button>
+      </section>
+      <section id="lobby-solo" class="panel" hidden>
+        <h1 id="solo-title"></h1>
+        <div id="solo-time"></div>
+        <ul id="solo-stats"></ul>
+        <button id="solo-again" type="button">다시 하기</button>
+        <button id="solo-lobby" type="button" class="secondary">로비로</button>
       </section>
       <section id="lobby-disconnected" class="panel" hidden>
         <h1>서버 연결이 끊어졌습니다</h1>

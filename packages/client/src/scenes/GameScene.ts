@@ -5,8 +5,9 @@ import { bodyPoints, drawSnake, slidePath, subPath } from '../game/arrowGraphics
 import { gameEvents } from '../net/events.js';
 import { SocketIONetworkClient } from '../net/SocketIONetworkClient.js';
 import type { NetworkClient } from '../net/NetworkClient.js';
-import type { Outcome, RoundRecord } from '../game/summary.js';
+import type { Outcome, RoundRecord, SoloSummary } from '../game/summary.js';
 import { createLobby, type Lobby } from '../ui/lobby.js';
+import type { UIScene } from './UIScene.js';
 
 /** One arrow on the shared board: its drawing plus the invisible tap targets over its cells. */
 interface ArrowView {
@@ -24,6 +25,8 @@ interface ArrowsDebugHook {
   getYou: () => PlayerTag | null;
   getMatchId: () => string | null;
   isMyTurn: () => boolean;
+  /** What the HUD is currently telling the player (banner, countdown label, seconds in the clock). */
+  getHud: () => { banner: string; countdown: string; clock: string };
   /** The lobby's list of open rooms, as last sent by the server. */
   getRooms: () => RoomSummary[];
   /** These skip the lobby form and act directly under `name`. */
@@ -31,6 +34,9 @@ interface ArrowsDebugHook {
   joinRoom: (roomId: string, name: string) => void;
   leaveRoom: () => void;
   voteRematch: () => void;
+  startSolo: () => void;
+  /** The board's remaining arrows and the solo game id, for driving a solo run in tests. */
+  getSoloId: () => string | null;
 }
 declare global {
   interface Window {
@@ -48,7 +54,7 @@ export class GameScene extends Phaser.Scene {
   private net!: NetworkClient;
   private lobby!: Lobby;
   /** Which screen the player is on; decides how a dropped connection is handled. */
-  private phase: 'idle' | 'room' | 'match' | 'result' | 'disconnected' = 'idle';
+  private phase: 'idle' | 'room' | 'match' | 'result' | 'solo' | 'disconnected' = 'idle';
   private openRooms: RoomSummary[] = [];
   private rounds: RoundRecord[] = [];
   private arrows = new Map<string, ArrowView>();
@@ -61,6 +67,10 @@ export class GameScene extends Phaser.Scene {
   private myTurn = false;
   private roundOver = true;
   private matchOver = false;
+  /** The running solo game, and when its clock starts (`performance.now()` clock). */
+  private soloId: string | null = null;
+  private soloStartsAt = 0;
+  private soloOver = false;
 
   constructor() {
     super('GameScene');
@@ -77,6 +87,12 @@ export class GameScene extends Phaser.Scene {
       // The server answers with `room:left`, which is what actually returns us to the lobby.
       onLeaveRoom: () => this.net.leaveRoom(),
       onRematch: () => this.net.voteRematch(),
+      onSolo: () => this.net.startSolo(),
+      onSoloExit: () => {
+        this.net.leaveSolo();
+        this.resetMatch();
+        this.lobby.show('idle');
+      },
       onToLobby: () => {
         this.resetMatch();
         this.lobby.show('idle');
@@ -99,11 +115,14 @@ export class GameScene extends Phaser.Scene {
         getYou: () => this.you,
         getMatchId: () => this.matchId,
         isMyTurn: () => this.myTurn,
+        getHud: () => (this.scene.get('UIScene') as UIScene).debugHud(),
         getRooms: () => this.openRooms,
         createRoom: (name) => this.net.createRoom(name),
         joinRoom: (roomId, name) => this.net.joinRoom(roomId, name),
         leaveRoom: () => this.net.leaveRoom(),
         voteRematch: () => this.net.voteRematch(),
+        startSolo: () => this.net.startSolo(),
+        getSoloId: () => this.soloId,
       };
     }
   }
@@ -116,7 +135,7 @@ export class GameScene extends Phaser.Scene {
     for (let row = 0; row < GAMEPLAY.GRID_ROWS; row++) {
       for (let col = 0; col < GAMEPLAY.GRID_COLS; col++) {
         const { x, y } = cellToPosition(row, col);
-        dots.fillCircle(x, y, 3);
+        dots.fillCircle(x, y, 2);
       }
     }
     const clip = this.make.graphics({}, false);
@@ -141,6 +160,9 @@ export class GameScene extends Phaser.Scene {
     this.myTurn = false;
     this.roundOver = true;
     this.matchOver = false;
+    this.soloId = null;
+    this.soloOver = false;
+    this.lobby.setSoloExitVisible(false);
     this.rounds = [];
     this.phase = 'idle';
     gameEvents.clearReplay();
@@ -205,6 +227,38 @@ export class GameScene extends Phaser.Scene {
       });
     });
 
+    this.net.on('solo:started', ({ gameId, board, startsInMs, timeLimitMs }) => {
+      this.resetMatch();
+      this.phase = 'solo';
+      this.lobby.show('hidden');
+      this.lobby.setSoloExitVisible(true);
+      this.soloId = gameId;
+      this.board = board;
+      this.drawBoard(board);
+      this.soloStartsAt = performance.now() + startsInMs;
+      gameEvents.typedEmit('solo:preview', { total: board.arrows.length, startsAt: this.soloStartsAt, timeLimitMs });
+    });
+
+    this.net.on('solo:result', ({ arrowId, correct, remaining, mistakes, timeLeftMs }) => {
+      if (correct) this.removeArrow(arrowId, RENDER.COLORS.you);
+      else this.flashBlocked(arrowId);
+      gameEvents.typedEmit('solo:update', {
+        deadline: performance.now() + timeLeftMs,
+        mistakes,
+        remaining,
+        total: this.board?.arrows.length ?? 0,
+      });
+    });
+
+    this.net.on('solo:finished', (summary: SoloSummary) => {
+      this.soloOver = true;
+      this.soloId = null;
+      this.lobby.setSoloExitVisible(false);
+      gameEvents.typedEmit('solo:finished', { outcome: summary.outcome, timeLeftMs: summary.timeLeftMs });
+      // Let the last arrow finish sliding out before the result covers the board.
+      this.time.delayedCall(summary.outcome === 'cleared' ? 900 : 500, () => this.lobby.showSoloResult(summary));
+    });
+
     this.net.on('round:start', ({ roundIndex, board, first, startsInMs }) => {
       this.roundIndex = roundIndex;
       this.beginRound(board, first, startsInMs);
@@ -259,12 +313,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private beginRound(board: BoardDTO, first: PlayerTag, startsInMs: number): void {
-    this.clearArrows();
-    this.board = board;
+    this.drawBoard(board);
     this.roundOver = false;
     this.myTurn = false;
-
-    board.arrows.forEach((arrow, index) => this.addArrow(arrow, RENDER.ARROW_PALETTE[index % RENDER.ARROW_PALETTE.length]!));
 
     gameEvents.typedEmit('round:preview', {
       total: board.arrows.length,
@@ -274,6 +325,12 @@ export class GameScene extends Phaser.Scene {
     });
     gameEvents.typedEmit('score:update', { you: 0, opponent: 0, remaining: board.arrows.length });
     gameEvents.typedEmit('round:countdown', { startsAt: performance.now() + startsInMs });
+  }
+
+  private drawBoard(board: BoardDTO): void {
+    this.clearArrows();
+    this.board = board;
+    board.arrows.forEach((arrow, index) => this.addArrow(arrow, RENDER.ARROW_PALETTE[index % RENDER.ARROW_PALETTE.length]!));
   }
 
   private addArrow(arrow: ArrowDTO, color: number): void {
@@ -291,6 +348,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleClick(arrowId: string): void {
+    if (this.phase === 'solo') {
+      // Taps before the clock starts, or after the run ended, are not sent at all.
+      if (this.soloId && !this.soloOver && performance.now() >= this.soloStartsAt) this.net.soloClick(this.soloId, arrowId);
+      return;
+    }
     if (this.roundOver || !this.myTurn || !this.matchId) return;
     this.net.sendAttempt(this.matchId, this.roundIndex, arrowId);
   }
@@ -351,7 +413,7 @@ export class GameScene extends Phaser.Scene {
     const color = correct ? (mine ? RENDER.COLORS.you : RENDER.COLORS.opponent) : RENDER.COLORS.blockedFlash;
     const text = this.add
       .text(x, y, correct ? '+1' : '-1', {
-        fontSize: '30px',
+        fontSize: '26px',
         fontStyle: 'bold',
         color: `#${color.toString(16).padStart(6, '0')}`,
         stroke: '#12121c',
